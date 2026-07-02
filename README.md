@@ -61,25 +61,27 @@ VITE_SUPABASE_ANON_KEY=sua-anon-public-key
 ### 4. Deployar a Edge Function de IA
 
 A geração por IA roda numa **Supabase Edge Function** (`supabase/functions/generate-application`)
-para manter a **chave da Anthropic no servidor** — ela nunca vai para o frontend.
+para manter a **chave da IA no servidor** — ela nunca vai para o frontend.
+
+Pegue uma chave **grátis** do Gemini em https://aistudio.google.com/apikey, então:
 
 ```bash
-# 1. Configure a chave da Anthropic como secret (só no servidor)
-supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+# 1. Configure a chave do Gemini como secret (só no servidor)
+supabase secrets set GEMINI_API_KEY=...
 
 # 2. Faça o deploy da função
 supabase functions deploy generate-application
 ```
 
-> Modelo usado: **`claude-haiku-4-5`** (mais barato, ótimo para testar sem gastar muito
-> crédito), `max_tokens = 1500`. Para maior qualidade, troque a constante `MODEL` na função
-> para `claude-sonnet-4-6` e rode o deploy de novo. A função valida o usuário pelo JWT
-> (RLS aplicada), busca o `base_resume` e a `job_description`, chama a Anthropic pedindo um
+> Modelo usado: **`gemini-2.0-flash`** (tier gratuito do Google AI Studio),
+> `maxOutputTokens = 1500`. A função valida o usuário pelo JWT (RLS aplicada), busca o
+> `base_resume` e a `job_description`, chama o Gemini com `responseSchema` para garantir um
 > JSON estruturado (`cover_letter`, `keywords_present`, `keywords_missing`, `match_score`)
-> e salva o resultado na aplicação.
+> e salva o resultado na aplicação. Para trocar de modelo, edite a constante `MODEL` na
+> função (ex.: `gemini-2.5-flash`) e rode o deploy de novo.
 
 Para testar a função localmente: `supabase functions serve generate-application`
-(com `ANTHROPIC_API_KEY` no seu `supabase/.env`).
+(com `GEMINI_API_KEY` no seu `supabase/.env`).
 
 ### 5. Rodar
 

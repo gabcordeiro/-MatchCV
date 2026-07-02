@@ -1,23 +1,24 @@
 // Supabase Edge Function: generate-application
 //
 // Recebe { application_id }, busca o currículo base do perfil e a descrição da
-// vaga (respeitando RLS via JWT do usuário), chama a API da Anthropic (Claude)
-// para gerar a carta de apresentação + análise de compatibilidade, e salva o
+// vaga (respeitando RLS via JWT do usuário), chama a API do Google Gemini para
+// gerar a carta de apresentação + análise de compatibilidade, e salva o
 // resultado na tabela `applications`.
 //
-// A chave da Anthropic (ANTHROPIC_API_KEY) fica APENAS aqui no servidor —
-// nunca no frontend. Configure com:
-//   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+// A chave do Gemini (GEMINI_API_KEY) fica APENAS aqui no servidor — nunca no
+// frontend. Pegue uma chave grátis em https://aistudio.google.com/apikey e
+// configure com:
+//   supabase secrets set GEMINI_API_KEY=...
 //
 // Deploy:
 //   supabase functions deploy generate-application
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
-// Modelo mais barato para testes. Para maior qualidade, troque para
-// 'claude-sonnet-4-6' e rode `supabase functions deploy generate-application`.
-const MODEL = 'claude-haiku-4-5'
+// gemini-2.0-flash está no tier gratuito e não gasta tokens "pensando".
+// Alternativas: gemini-2.5-flash (mais forte) ou gemini-1.5-flash.
+const MODEL = 'gemini-2.0-flash'
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`
 const MAX_TOKENS = 1500
 
 const corsHeaders = {
@@ -40,12 +41,22 @@ A partir do CURRÍCULO de um candidato e da DESCRIÇÃO DE UMA VAGA, você deve:
 1. Escrever uma carta de apresentação personalizada, com tom profissional e caloroso, em português. Foque nos pontos do currículo que MAIS combinam com a vaga. Seja específico e evite clichês genéricos. Não invente experiências que não estão no currículo.
 2. Identificar as palavras-chave e competências mais importantes da vaga que ESTÃO presentes no currículo (keywords_present).
 3. Identificar as palavras-chave e competências importantes da vaga que NÃO estão no currículo (keywords_missing), para o candidato saber o que destacar ou desenvolver.
-4. Calcular um match_score de 0 a 100 representando a compatibilidade geral do currículo com a vaga.
+4. Calcular um match_score de 0 a 100 representando a compatibilidade geral do currículo com a vaga.`
 
-Responda ESTRITAMENTE com um único objeto JSON válido, sem markdown, sem cercas de código, sem texto antes ou depois, exatamente neste formato:
-{"cover_letter": "texto da carta", "keywords_present": ["..."], "keywords_missing": ["..."], "match_score": 0}`
+// Schema que o Gemini deve seguir na resposta (força JSON estruturado).
+const RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    cover_letter: { type: 'STRING' },
+    keywords_present: { type: 'ARRAY', items: { type: 'STRING' } },
+    keywords_missing: { type: 'ARRAY', items: { type: 'STRING' } },
+    match_score: { type: 'INTEGER' },
+  },
+  required: ['cover_letter', 'keywords_present', 'keywords_missing', 'match_score'],
+}
 
-// Extrai o JSON da resposta do modelo, tolerando cercas de código eventuais.
+// Parse tolerante: com responseSchema o Gemini já devolve JSON limpo, mas
+// mantemos o fallback por segurança.
 function parseModelJson(text: string) {
   const cleaned = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
   try {
@@ -80,9 +91,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
+    const apiKey = Deno.env.get('GEMINI_API_KEY')
     if (!apiKey) {
-      return json({ error: 'ANTHROPIC_API_KEY não configurada no servidor.' }, 500)
+      return json({ error: 'GEMINI_API_KEY não configurada no servidor.' }, 500)
     }
 
     const authHeader = req.headers.get('Authorization')
@@ -139,46 +150,60 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Chamada à Anthropic. Raw HTTP mantém a função leve no runtime Deno.
-    // Pedimos JSON estrito no prompt e fazemos o parse da resposta (sem structured
-    // outputs nem prefill), o que funciona tanto no Haiku quanto no Sonnet.
-    const anthropicRes = await fetch(ANTHROPIC_API_URL, {
+    // Chamada ao Gemini. responseSchema + responseMimeType forçam JSON estruturado.
+    const geminiRes = await fetch(GEMINI_API_URL, {
       method: 'POST',
       headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        'x-goog-api-key': apiKey,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: MODEL,
-        max_tokens: MAX_TOKENS,
-        system: SYSTEM_PROMPT,
-        messages: [
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [
           {
             role: 'user',
-            content:
-              `CURRÍCULO DO CANDIDATO:\n${baseResume}\n\n` +
-              `DESCRIÇÃO DA VAGA:\n${application.job_description.trim()}`,
+            parts: [
+              {
+                text:
+                  `CURRÍCULO DO CANDIDATO:\n${baseResume}\n\n` +
+                  `DESCRIÇÃO DA VAGA:\n${application.job_description.trim()}`,
+              },
+            ],
           },
         ],
+        generationConfig: {
+          maxOutputTokens: MAX_TOKENS,
+          responseMimeType: 'application/json',
+          responseSchema: RESPONSE_SCHEMA,
+        },
       }),
     })
 
-    if (!anthropicRes.ok) {
-      const detail = await anthropicRes.text()
-      console.error('Anthropic error', anthropicRes.status, detail)
+    if (!geminiRes.ok) {
+      const detail = await geminiRes.text()
+      console.error('Gemini error', geminiRes.status, detail)
       return json({ error: 'Falha ao gerar com a IA. Tente novamente.' }, 502)
     }
 
-    const payload = await anthropicRes.json()
-    if (payload.stop_reason === 'refusal') {
+    const payload = await geminiRes.json()
+
+    // Prompt bloqueado por segurança antes de gerar qualquer coisa.
+    if (payload?.promptFeedback?.blockReason) {
       return json({ error: 'A IA não pôde processar este conteúdo.' }, 422)
     }
 
-    const text = (payload.content ?? [])
-      .filter((b: any) => b.type === 'text')
-      .map((b: any) => b.text)
+    const candidate = payload?.candidates?.[0]
+    if (candidate?.finishReason && candidate.finishReason === 'SAFETY') {
+      return json({ error: 'A IA não pôde processar este conteúdo.' }, 422)
+    }
+
+    const text = (candidate?.content?.parts ?? [])
+      .map((p: any) => p?.text ?? '')
       .join('')
+
+    if (!text.trim()) {
+      return json({ error: 'A IA não retornou resposta. Tente novamente.' }, 502)
+    }
 
     const result = normalizeResult(parseModelJson(text))
     if (!result.cover_letter) {
