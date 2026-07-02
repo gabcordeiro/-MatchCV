@@ -182,6 +182,15 @@ Deno.serve(async (req) => {
     if (!geminiRes.ok) {
       const detail = await geminiRes.text()
       console.error('Gemini error', geminiRes.status, detail)
+      if (geminiRes.status === 429) {
+        return json(
+          {
+            error:
+              'Limite gratuito do Gemini atingido no momento. Aguarde cerca de 1 minuto e tente novamente (evite clicar várias vezes seguidas).',
+          },
+          429,
+        )
+      }
       return json({ error: 'Falha ao gerar com a IA. Tente novamente.' }, 502)
     }
 
