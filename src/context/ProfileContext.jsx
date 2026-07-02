@@ -18,7 +18,7 @@ export function ProfileProvider({ children }) {
     // Fetch the profile row; create it lazily if it doesn't exist yet.
     const { data, error: fetchError } = await supabase
       .from('profiles')
-      .select('id, base_resume, onboarded, created_at')
+      .select('id, base_resume, onboarded, avatar_url, created_at')
       .eq('id', user.id)
       .maybeSingle()
 
@@ -38,7 +38,7 @@ export function ProfileProvider({ children }) {
     const { data: created, error: insertError } = await supabase
       .from('profiles')
       .insert({ id: user.id })
-      .select('id, base_resume, onboarded, created_at')
+      .select('id, base_resume, onboarded, avatar_url, created_at')
       .single()
 
     if (insertError) {
@@ -60,7 +60,7 @@ export function ProfileProvider({ children }) {
         .from('profiles')
         .update(updates)
         .eq('id', user.id)
-        .select('id, base_resume, onboarded, created_at')
+        .select('id, base_resume, onboarded, avatar_url, created_at')
         .single()
 
       if (updateError) return { error: updateError.message }

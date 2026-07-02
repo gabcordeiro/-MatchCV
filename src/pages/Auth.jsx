@@ -11,7 +11,9 @@ export default function Auth() {
 
   const [mode, setMode] = useState('signin') // 'signin' | 'signup'
   const [email, setEmail] = useState('')
+  const [confirmEmail, setConfirmEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -25,6 +27,8 @@ export default function Auth() {
     setMode(next)
     setError(null)
     setNotice(null)
+    setConfirmEmail('')
+    setConfirmPassword('')
   }
 
   async function handleSubmit(e) {
@@ -39,6 +43,16 @@ export default function Auth() {
     if (password.length < 6) {
       setError('A senha deve ter pelo menos 6 caracteres.')
       return
+    }
+    if (mode === 'signup') {
+      if (email.trim().toLowerCase() !== confirmEmail.trim().toLowerCase()) {
+        setError('Os emails não coincidem.')
+        return
+      }
+      if (password !== confirmPassword) {
+        setError('As senhas não coincidem.')
+        return
+      }
     }
 
     setSubmitting(true)
@@ -111,6 +125,26 @@ export default function Auth() {
                 placeholder="voce@email.com"
               />
             </div>
+
+            {isSignup && (
+              <div>
+                <label htmlFor="confirmEmail" className="label">
+                  Confirmar email
+                </label>
+                <input
+                  id="confirmEmail"
+                  type="email"
+                  autoComplete="off"
+                  required
+                  value={confirmEmail}
+                  onChange={(e) => setConfirmEmail(e.target.value)}
+                  onPaste={(e) => e.preventDefault()}
+                  className="input"
+                  placeholder="Repita seu email"
+                />
+              </div>
+            )}
+
             <div>
               <label htmlFor="password" className="label">
                 Senha
@@ -126,6 +160,24 @@ export default function Auth() {
                 placeholder="Mínimo 6 caracteres"
               />
             </div>
+
+            {isSignup && (
+              <div>
+                <label htmlFor="confirmPassword" className="label">
+                  Confirmar senha
+                </label>
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="input"
+                  placeholder="Repita sua senha"
+                />
+              </div>
+            )}
 
             {error && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>

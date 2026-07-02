@@ -39,10 +39,12 @@ npm install
 ### 2. Criar um projeto Supabase e aplicar o schema
 
 1. Crie um projeto em [supabase.com](https://supabase.com).
-2. No **SQL Editor**, cole e execute o conteúdo de
-   [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql).
-   Isso cria as tabelas `profiles` e `applications`, habilita **RLS** e adiciona
-   as políticas para que cada usuário só veja/edite seus próprios registros.
+2. No **SQL Editor**, execute as migrations da pasta
+   [`supabase/migrations/`](supabase/migrations/) **em ordem**:
+   - [`0001_init.sql`](supabase/migrations/0001_init.sql) — tabelas `profiles` e
+     `applications`, **RLS** e políticas por usuário.
+   - [`0002_avatars.sql`](supabase/migrations/0002_avatars.sql) — coluna
+     `avatar_url`, bucket de Storage `avatars` (público) e políticas de upload.
    > Usando a Supabase CLI? Rode `supabase db push` com o projeto linkado.
 
 ### 3. Configurar variáveis de ambiente
@@ -104,6 +106,7 @@ Abra http://localhost:5173.
 | `id`          | uuid (PK)     | referencia `auth.users(id)`                  |
 | `base_resume` | text          | currículo base em texto                      |
 | `onboarded`   | boolean       | controla o onboarding único (default `false`)|
+| `avatar_url`  | text          | URL pública da foto de perfil (Storage)      |
 | `created_at`  | timestamptz   | default `now()`                              |
 
 ### `applications`

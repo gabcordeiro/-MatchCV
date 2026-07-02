@@ -4,6 +4,7 @@ import { useProfile } from '../context/ProfileContext.jsx'
 import { FullPageSpinner } from '../components/Spinner.jsx'
 import Spinner from '../components/Spinner.jsx'
 import Logo from '../components/Logo.jsx'
+import AvatarUpload from '../components/AvatarUpload.jsx'
 
 export default function Onboarding() {
   const navigate = useNavigate()
@@ -71,6 +72,11 @@ export default function Onboarding() {
             Vamos usar esse texto como base para gerar cartas de apresentação e analisar a
             compatibilidade com cada vaga. Você pode editar isso depois.
           </p>
+
+          <div className="mt-6">
+            <span className="label">Foto de perfil (opcional)</span>
+            <AvatarUpload />
+          </div>
 
           <div className="mt-6">
             <label htmlFor="resume" className="label">
