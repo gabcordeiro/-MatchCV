@@ -71,9 +71,11 @@ supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 supabase functions deploy generate-application
 ```
 
-> Modelo usado: **`claude-sonnet-4-6`**, `max_tokens = 1500`. A função valida o usuário pelo
-> JWT (RLS aplicada), busca o `base_resume` e a `job_description`, chama a Anthropic pedindo
-> um JSON estruturado (`cover_letter`, `keywords_present`, `keywords_missing`, `match_score`)
+> Modelo usado: **`claude-haiku-4-5`** (mais barato, ótimo para testar sem gastar muito
+> crédito), `max_tokens = 1500`. Para maior qualidade, troque a constante `MODEL` na função
+> para `claude-sonnet-4-6` e rode o deploy de novo. A função valida o usuário pelo JWT
+> (RLS aplicada), busca o `base_resume` e a `job_description`, chama a Anthropic pedindo um
+> JSON estruturado (`cover_letter`, `keywords_present`, `keywords_missing`, `match_score`)
 > e salva o resultado na aplicação.
 
 Para testar a função localmente: `supabase functions serve generate-application`

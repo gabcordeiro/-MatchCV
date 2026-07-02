@@ -15,7 +15,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
-const MODEL = 'claude-sonnet-4-6'
+// Modelo mais barato para testes. Para maior qualidade, troque para
+// 'claude-sonnet-4-6' e rode `supabase functions deploy generate-application`.
+const MODEL = 'claude-haiku-4-5'
 const MAX_TOKENS = 1500
 
 const corsHeaders = {
@@ -138,8 +140,8 @@ Deno.serve(async (req) => {
     }
 
     // Chamada à Anthropic. Raw HTTP mantém a função leve no runtime Deno.
-    // claude-sonnet-4-6 não suporta structured outputs nem prefill de assistant,
-    // então pedimos JSON estrito no prompt e fazemos o parse da resposta.
+    // Pedimos JSON estrito no prompt e fazemos o parse da resposta (sem structured
+    // outputs nem prefill), o que funciona tanto no Haiku quanto no Sonnet.
     const anthropicRes = await fetch(ANTHROPIC_API_URL, {
       method: 'POST',
       headers: {
