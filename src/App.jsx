@@ -1,0 +1,33 @@
+import { Navigate, Route, Routes } from 'react-router-dom'
+import RequireAuth from './components/RequireAuth.jsx'
+import AppLayout from './components/AppLayout.jsx'
+import Landing from './pages/Landing.jsx'
+import Auth from './pages/Auth.jsx'
+import Onboarding from './pages/Onboarding.jsx'
+import Dashboard from './pages/Dashboard.jsx'
+import NewApplication from './pages/NewApplication.jsx'
+
+export default function App() {
+  return (
+    <Routes>
+      {/* Public */}
+      <Route path="/" element={<Landing />} />
+      <Route path="/auth" element={<Auth />} />
+
+      {/* Authenticated */}
+      <Route element={<RequireAuth />}>
+        {/* Onboarding lives outside AppLayout so it can render without the navbar */}
+        <Route path="/onboarding" element={<Onboarding />} />
+
+        {/* Main app (redirects to onboarding until it's completed) */}
+        <Route element={<AppLayout />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard/new" element={<NewApplication />} />
+        </Route>
+      </Route>
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}
