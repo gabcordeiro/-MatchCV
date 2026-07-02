@@ -72,7 +72,10 @@ Pegue uma chave **grátis** do Gemini em https://aistudio.google.com/apikey, ent
 supabase secrets set GEMINI_API_KEY=...
 
 # 2. Faça o deploy da função
-supabase functions deploy generate-application
+#    --no-verify-jwt: evita que o gateway do Supabase bloqueie o preflight CORS
+#    (a requisição OPTIONS do navegador não leva Authorization). A própria função
+#    valida o usuário por dentro via supabase.auth.getUser() + RLS, então continua seguro.
+supabase functions deploy generate-application --no-verify-jwt
 ```
 
 > Modelo usado: **`gemini-2.0-flash`** (tier gratuito do Google AI Studio),
