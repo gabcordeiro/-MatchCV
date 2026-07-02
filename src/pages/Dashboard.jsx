@@ -7,6 +7,7 @@ import Spinner from '../components/Spinner.jsx'
 
 const STATUS_LABELS = {
   draft: { label: 'Rascunho', className: 'bg-slate-100 text-slate-600' },
+  completed: { label: 'Concluída', className: 'bg-emerald-100 text-emerald-700' },
   generated: { label: 'Gerada', className: 'bg-brand-100 text-brand-700' },
 }
 
@@ -24,7 +25,7 @@ export default function Dashboard() {
       setLoading(true)
       const { data, error: err } = await supabase
         .from('applications')
-        .select('id, company_name, job_description, status, created_at')
+        .select('id, company_name, job_description, status, match_analysis, created_at')
         .order('created_at', { ascending: false })
 
       if (!active) return
@@ -88,19 +89,31 @@ function ApplicationRow({ app }) {
   const status = STATUS_LABELS[app.status] ?? STATUS_LABELS.draft
   const title = app.company_name?.trim() || 'Vaga sem empresa'
   const preview = app.job_description?.slice(0, 140) ?? ''
+  const score = app.match_analysis?.match_score
 
   return (
-    <li className="card flex items-start justify-between gap-4 p-4 sm:p-5">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <h3 className="truncate font-semibold text-slate-900">{title}</h3>
-          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${status.className}`}>
-            {status.label}
-          </span>
+    <li>
+      <Link
+        to={`/dashboard/app/${app.id}`}
+        className="card flex items-start justify-between gap-4 p-4 transition-colors hover:border-brand-300 sm:p-5"
+      >
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate font-semibold text-slate-900">{title}</h3>
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${status.className}`}>
+              {status.label}
+            </span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-sm text-slate-500">{preview}</p>
+          <p className="mt-2 text-xs text-slate-400">{formatDate(app.created_at)}</p>
         </div>
-        <p className="mt-1 line-clamp-2 text-sm text-slate-500">{preview}</p>
-        <p className="mt-2 text-xs text-slate-400">{formatDate(app.created_at)}</p>
-      </div>
+        {typeof score === 'number' && (
+          <div className="shrink-0 text-right">
+            <div className="text-lg font-bold text-brand-600">{score}%</div>
+            <div className="text-[11px] text-slate-400">match</div>
+          </div>
+        )}
+      </Link>
     </li>
   )
 }

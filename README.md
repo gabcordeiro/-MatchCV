@@ -21,10 +21,12 @@ personalizadas** e **analisar a compatibilidade do currículo com a vaga** usand
 | `/auth`           | Login e cadastro com email/senha via Supabase Auth              |
 | `/onboarding`     | Primeiro acesso: colar currículo base (com "pular por agora")   |
 | `/dashboard`      | Lista de aplicações + "Nova aplicação"                          |
-| `/dashboard/new`  | Formulário de nova aplicação (vaga + empresa)                   |
+| `/dashboard/new`  | Formulário de nova aplicação (vaga + empresa) → gera com IA      |
+| `/dashboard/app/:id` | Tela de resultado: carta editável, match score, keywords     |
 
-A geração da carta e a análise de compatibilidade por IA entram na **próxima etapa** —
-por enquanto o formulário apenas salva a aplicação no banco.
+Ao clicar em **"Gerar"**, o app salva a aplicação, chama a IA (via Edge Function) para
+criar a **carta de apresentação** e a **análise de compatibilidade**, salva tudo no banco
+(`generated_letter`, `match_analysis`, `status = 'completed'`) e abre a tela de resultado.
 
 ## Como rodar localmente
 
@@ -56,7 +58,28 @@ VITE_SUPABASE_URL=https://SEU-PROJETO.supabase.co
 VITE_SUPABASE_ANON_KEY=sua-anon-public-key
 ```
 
-### 4. Rodar
+### 4. Deployar a Edge Function de IA
+
+A geração por IA roda numa **Supabase Edge Function** (`supabase/functions/generate-application`)
+para manter a **chave da Anthropic no servidor** — ela nunca vai para o frontend.
+
+```bash
+# 1. Configure a chave da Anthropic como secret (só no servidor)
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+
+# 2. Faça o deploy da função
+supabase functions deploy generate-application
+```
+
+> Modelo usado: **`claude-sonnet-4-6`**, `max_tokens = 1500`. A função valida o usuário pelo
+> JWT (RLS aplicada), busca o `base_resume` e a `job_description`, chama a Anthropic pedindo
+> um JSON estruturado (`cover_letter`, `keywords_present`, `keywords_missing`, `match_score`)
+> e salva o resultado na aplicação.
+
+Para testar a função localmente: `supabase functions serve generate-application`
+(com `ANTHROPIC_API_KEY` no seu `supabase/.env`).
+
+### 5. Rodar
 
 ```bash
 npm run dev
@@ -114,10 +137,19 @@ supabase/
   migrations/     # schema + RLS
 ```
 
+## Estrutura do projeto (adições desta etapa)
+
+```
+src/
+  lib/api.js                 # invoca a Edge Function e trata erros
+  pages/ApplicationDetail.jsx # tela de resultado (carta + score + keywords)
+supabase/
+  functions/generate-application/index.ts  # chamada à IA (server-side)
+```
+
 ## Próximos passos
 
-- Integrar a IA para gerar a carta de apresentação e a análise de compatibilidade
-  (preencher `generated_letter` e `match_analysis`), provavelmente via Supabase
-  Edge Function para manter a chave da API no servidor.
-- Tela de detalhe da aplicação com a carta e a análise.
+- **Exportar PDF** da carta (hoje é um placeholder).
+- Streaming da geração para feedback em tempo real.
 - Edição do currículo base fora do onboarding.
+- Cache/histórico de versões de carta por aplicação.
