@@ -65,11 +65,11 @@ VITE_SUPABASE_ANON_KEY=sua-anon-public-key
 A geração por IA roda numa **Supabase Edge Function** (`supabase/functions/generate-application`)
 para manter a **chave da IA no servidor** — ela nunca vai para o frontend.
 
-Pegue uma chave **grátis** do Gemini em https://aistudio.google.com/apikey, então:
+Pegue uma chave **grátis** do Groq (free tier, sem cartão) em https://console.groq.com/keys, então:
 
 ```bash
-# 1. Configure a chave do Gemini como secret (só no servidor)
-supabase secrets set GEMINI_API_KEY=...
+# 1. Configure a chave do Groq como secret (só no servidor)
+supabase secrets set GROQ_API_KEY=...
 
 # 2. Faça o deploy da função
 #    --no-verify-jwt: evita que o gateway do Supabase bloqueie o preflight CORS
@@ -78,15 +78,15 @@ supabase secrets set GEMINI_API_KEY=...
 supabase functions deploy generate-application --no-verify-jwt
 ```
 
-> Modelo usado: **`gemini-2.0-flash`** (tier gratuito do Google AI Studio),
-> `maxOutputTokens = 1500`. A função valida o usuário pelo JWT (RLS aplicada), busca o
-> `base_resume` e a `job_description`, chama o Gemini com `responseSchema` para garantir um
-> JSON estruturado (`cover_letter`, `keywords_present`, `keywords_missing`, `match_score`)
-> e salva o resultado na aplicação. Para trocar de modelo, edite a constante `MODEL` na
-> função (ex.: `gemini-2.5-flash`) e rode o deploy de novo.
+> Modelo usado: **`llama-3.3-70b-versatile`** via **Groq** (API compatível com OpenAI,
+> free tier generoso e sem cartão), `max_tokens = 1500`. A função valida o usuário pelo JWT
+> (RLS aplicada), busca o `base_resume` e a `job_description`, chama o Groq em JSON mode
+> (`response_format: json_object`) para obter `cover_letter`, `keywords_present`,
+> `keywords_missing` e `match_score`, e salva o resultado. Para trocar de modelo, edite a
+> constante `MODEL` na função e rode o deploy de novo.
 
 Para testar a função localmente: `supabase functions serve generate-application`
-(com `GEMINI_API_KEY` no seu `supabase/.env`).
+(com `GROQ_API_KEY` no seu `supabase/.env`).
 
 ### 5. Rodar
 
