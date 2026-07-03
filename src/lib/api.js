@@ -21,3 +21,24 @@ export async function generateApplication(applicationId) {
 
   return { data }
 }
+
+// Inicia o checkout do Stripe para assinar o plano Pro.
+// Enquanto os pagamentos não estiverem ativados, retorna um aviso amigável.
+export async function createCheckout() {
+  const { data, error } = await supabase.functions.invoke('create-checkout', {
+    body: {},
+  })
+
+  if (error) {
+    let message = 'Pagamentos ainda não estão ativados. Em breve!'
+    try {
+      const body = await error.context?.json?.()
+      if (body?.error) message = body.error
+    } catch {
+      /* mantém a mensagem padrão */
+    }
+    return { error: message }
+  }
+
+  return { data }
+}

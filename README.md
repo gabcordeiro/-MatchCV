@@ -20,13 +20,22 @@ personalizadas** e **analisar a compatibilidade do currículo com a vaga** usand
 | `/`               | Landing page (título, 3 bullets, "Começar grátis")              |
 | `/auth`           | Login e cadastro com email/senha via Supabase Auth              |
 | `/onboarding`     | Primeiro acesso: colar currículo base (com "pular por agora")   |
-| `/dashboard`      | Lista de aplicações + "Nova aplicação"                          |
+| `/dashboard`      | **Kanban de candidaturas** (Salvas → Aplicadas → Entrevista → Oferta → Recusadas) + visão em lista |
 | `/dashboard/new`  | Formulário de nova aplicação (vaga + empresa) → gera com IA      |
-| `/dashboard/app/:id` | Tela de resultado: carta editável, match score, keywords     |
+| `/dashboard/app/:id` | Resultado: carta editável, match score, keywords e **dicas de entrevista** |
+| `/dashboard/upgrade` | Planos Free x Pro (checkout via Stripe quando ativado)        |
 
 Ao clicar em **"Gerar"**, o app salva a aplicação, chama a IA (via Edge Function) para
-criar a **carta de apresentação** e a **análise de compatibilidade**, salva tudo no banco
-(`generated_letter`, `match_analysis`, `status = 'completed'`) e abre a tela de resultado.
+criar a **carta de apresentação**, a **análise de compatibilidade** e as **dicas de
+entrevista**, salva tudo no banco (`generated_letter`, `match_analysis`,
+`status = 'completed'`) e abre a tela de resultado.
+
+## Planos e limite de uso
+
+- **Free**: 3 gerações por mês (contador `generations_used` em `profiles`, resetado
+  mensalmente). O limite é **enforçado no servidor**, na Edge Function — o usuário não
+  consegue editar as colunas de plano/uso (ver migration 0003).
+- **Pro** (R$ 14,90/mês sugerido): gerações ilimitadas, via assinatura Stripe.
 
 ## Como rodar localmente
 
@@ -45,6 +54,9 @@ npm install
      `applications`, **RLS** e políticas por usuário.
    - [`0002_avatars.sql`](supabase/migrations/0002_avatars.sql) — coluna
      `avatar_url`, bucket de Storage `avatars` (público) e políticas de upload.
+   - [`0003_kanban_billing.sql`](supabase/migrations/0003_kanban_billing.sql) —
+     coluna `stage` (kanban) e colunas de plano/uso/Stripe em `profiles`
+     (protegidas: só o servidor pode alterá-las).
    > Usando a Supabase CLI? Rode `supabase db push` com o projeto linkado.
 
 ### 3. Configurar variáveis de ambiente
@@ -88,7 +100,38 @@ supabase functions deploy generate-application --no-verify-jwt
 Para testar a função localmente: `supabase functions serve generate-application`
 (com `GROQ_API_KEY` no seu `supabase/.env`).
 
-### 5. Rodar
+### 5. Pagamentos (Stripe) — pronto para ativar
+
+O código do checkout e do webhook já está no repositório
+(`supabase/functions/create-checkout` e `supabase/functions/stripe-webhook`).
+Enquanto não forem ativados, o botão "Assinar Pro" mostra "em breve" — nada quebra.
+
+Quando quiser ativar:
+
+1. Crie uma conta em [stripe.com](https://stripe.com) e, no painel, um **Produto**
+   "MatchCV Pro" com um **preço recorrente mensal** (ex.: R$ 14,90). Copie o
+   **Price ID** (`price_...`).
+2. Configure os secrets das Edge Functions (Dashboard → Edge Functions → Secrets):
+   - `STRIPE_SECRET_KEY` — chave secreta do Stripe (`sk_live_...` ou `sk_test_...`)
+   - `STRIPE_PRICE_ID` — o `price_...` do passo 1
+   - `APP_URL` — URL do app (ex.: `https://match-cv-nine.vercel.app`)
+3. Deploy das duas funções (com verificação de JWT desligada — a auth do checkout é
+   validada dentro da função e o webhook usa assinatura HMAC do Stripe):
+   ```bash
+   supabase functions deploy create-checkout --no-verify-jwt
+   supabase functions deploy stripe-webhook --no-verify-jwt
+   ```
+4. No painel do Stripe → **Developers → Webhooks**, registre o endpoint
+   `https://SEU_PROJECT_REF.supabase.co/functions/v1/stripe-webhook` com os eventos
+   `checkout.session.completed`, `customer.subscription.updated` e
+   `customer.subscription.deleted`. Copie o **Signing secret** (`whsec_...`) e salve
+   como secret `STRIPE_WEBHOOK_SECRET`.
+
+Fluxo: usuário clica "Assinar Pro" → `create-checkout` cria a sessão → Stripe cobra →
+`stripe-webhook` recebe `checkout.session.completed` → marca `plan = 'pro'` no perfil.
+Cancelamentos voltam o plano para `free` automaticamente.
+
+### 6. Rodar
 
 ```bash
 npm run dev

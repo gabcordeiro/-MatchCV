@@ -1,18 +1,18 @@
-// Supabase Edge Function: generate-application
+// Supabase Edge Function: generate-application (Groq)
 //
-// Gera a carta de apresentação + análise de compatibilidade usando o Groq
-// (API compatível com OpenAI, free tier generoso e sem cartão de crédito).
+// Gera carta de apresentação + análise de compatibilidade + dicas de entrevista,
+// aplicando o limite mensal do plano (free: 3 gerações/mês; pro: ilimitado).
 // A chave (GROQ_API_KEY) fica APENAS aqui no servidor — nunca no frontend.
 //
-// Pegue uma chave grátis em https://console.groq.com/keys e configure:
-//   Supabase → Edge Functions → Secrets → GROQ_API_KEY
+// Chave grátis em https://console.groq.com/keys → secret GROQ_API_KEY.
+// Deploy com verify_jwt desligado (a auth é validada aqui dentro, via getUser + RLS).
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
-// Modelo do Groq (free tier). Alternativas: 'llama-3.1-8b-instant' (mais rápido).
 const MODEL = 'llama-3.3-70b-versatile'
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions'
-const MAX_TOKENS = 1500
+const MAX_TOKENS = 2000
+const FREE_MONTHLY_LIMIT = 3
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -27,8 +27,6 @@ function json(body: unknown, status = 200) {
   })
 }
 
-// Groq usa "JSON mode" (response_format json_object): o prompt precisa pedir JSON
-// e descrever o formato exato.
 const SYSTEM_PROMPT = `Você é um assistente especialista em recrutamento e carreira, escrevendo em português do Brasil.
 
 A partir do CURRÍCULO de um candidato e da DESCRIÇÃO DE UMA VAGA, você deve:
@@ -36,15 +34,14 @@ A partir do CURRÍCULO de um candidato e da DESCRIÇÃO DE UMA VAGA, você deve:
 2. Identificar as palavras-chave e competências mais importantes da vaga que ESTÃO presentes no currículo (keywords_present).
 3. Identificar as palavras-chave e competências importantes da vaga que NÃO estão no currículo (keywords_missing).
 4. Calcular um match_score de 0 a 100 representando a compatibilidade geral do currículo com a vaga.
+5. Listar 5 perguntas que provavelmente serão feitas na entrevista DESTA vaga (interview_tips), cada uma com uma dica curta e prática de como ESTE candidato deve responder — aproveitando os pontos fortes do currículo e preparando-o para as lacunas.
 
 Responda SOMENTE com um objeto JSON válido, exatamente neste formato:
-{"cover_letter": "texto da carta", "keywords_present": ["..."], "keywords_missing": ["..."], "match_score": 0}`
+{"cover_letter": "texto da carta", "keywords_present": ["..."], "keywords_missing": ["..."], "match_score": 0, "interview_tips": [{"question": "...", "tip": "..."}]}`
 
 function parseModelJson(text: string) {
   const cleaned = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
-  try {
-    return JSON.parse(cleaned)
-  } catch {
+  try { return JSON.parse(cleaned) } catch {
     const m = cleaned.match(/\{[\s\S]*\}/)
     if (m) return JSON.parse(m[0])
     throw new Error('Não foi possível interpretar a resposta da IA.')
@@ -52,17 +49,30 @@ function parseModelJson(text: string) {
 }
 
 function normalizeResult(raw: any) {
-  const arr = (v: unknown) =>
-    Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean) : []
+  const arr = (v: unknown) => Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean) : []
   let score = Number(raw?.match_score)
   if (!Number.isFinite(score)) score = 0
   score = Math.max(0, Math.min(100, Math.round(score)))
+  const tips = Array.isArray(raw?.interview_tips)
+    ? raw.interview_tips
+        .map((t: any) => ({
+          question: String(t?.question ?? '').trim(),
+          tip: String(t?.tip ?? '').trim(),
+        }))
+        .filter((t: { question: string }) => t.question)
+        .slice(0, 8)
+    : []
   return {
     cover_letter: typeof raw?.cover_letter === 'string' ? raw.cover_letter.trim() : '',
     keywords_present: arr(raw?.keywords_present),
     keywords_missing: arr(raw?.keywords_missing),
     match_score: score,
+    interview_tips: tips,
   }
+}
+
+function nextMonthUtc(from: Date) {
+  return new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 1))
 }
 
 Deno.serve(async (req) => {
@@ -85,36 +95,45 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } },
     )
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user) return json({ error: 'Sessão inválida.' }, 401)
 
     const { data: application, error: appError } = await supabase
-      .from('applications')
-      .select('id, job_description')
-      .eq('id', application_id)
-      .single()
+      .from('applications').select('id, job_description').eq('id', application_id).single()
     if (appError || !application) return json({ error: 'Aplicação não encontrada.' }, 404)
-    if (!application.job_description?.trim())
-      return json({ error: 'A descrição da vaga está vazia.' }, 400)
+    if (!application.job_description?.trim()) return json({ error: 'A descrição da vaga está vazia.' }, 400)
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('base_resume')
+      .select('base_resume, plan, generations_used, usage_reset_at')
       .eq('id', user.id)
       .maybeSingle()
+
     const baseResume = profile?.base_resume?.trim()
-    if (!baseResume)
-      return json({ error: 'Adicione seu currículo base no perfil antes de gerar.' }, 400)
+    if (!baseResume) return json({ error: 'Adicione seu currículo base no perfil antes de gerar.' }, 400)
+
+    // --- Limite do plano (enforçado no servidor) ---
+    const plan = profile?.plan ?? 'free'
+    let used = profile?.generations_used ?? 0
+    let resetAtIso = profile?.usage_reset_at as string | null
+    const now = new Date()
+    if (!resetAtIso || new Date(resetAtIso) <= now) {
+      used = 0
+      resetAtIso = nextMonthUtc(now).toISOString()
+    }
+    if (plan !== 'pro' && used >= FREE_MONTHLY_LIMIT) {
+      return json(
+        {
+          error: `Você já usou as ${FREE_MONTHLY_LIMIT} gerações grátis deste mês. Assine o plano Pro para gerar sem limites.`,
+          code: 'limit_reached',
+        },
+        402,
+      )
+    }
 
     const groqRes = await fetch(GROQ_API_URL, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         model: MODEL,
         max_tokens: MAX_TOKENS,
@@ -136,13 +155,7 @@ Deno.serve(async (req) => {
       const detail = await groqRes.text()
       console.error('Groq error', groqRes.status, detail)
       if (groqRes.status === 429) {
-        return json(
-          {
-            error:
-              'Limite gratuito da IA atingido no momento. Aguarde cerca de 1 minuto e tente novamente.',
-          },
-          429,
-        )
+        return json({ error: 'Limite gratuito da IA atingido no momento. Aguarde cerca de 1 minuto e tente novamente.' }, 429)
       }
       return json({ error: 'Falha ao gerar com a IA. Tente novamente.' }, 502)
     }
@@ -158,14 +171,35 @@ Deno.serve(async (req) => {
       match_score: result.match_score,
       keywords_present: result.keywords_present,
       keywords_missing: result.keywords_missing,
+      interview_tips: result.interview_tips,
     }
+
     const { error: updateError } = await supabase
       .from('applications')
       .update({ generated_letter: result.cover_letter, match_analysis, status: 'completed' })
       .eq('id', application_id)
     if (updateError) return json({ error: 'Não foi possível salvar o resultado.' }, 500)
 
-    return json({ generated_letter: result.cover_letter, match_analysis, status: 'completed' })
+    // Incrementa o uso via service role (o usuário não tem permissão de UPDATE
+    // nessas colunas — ver migration 0003).
+    const admin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
+    const { error: usageError } = await admin
+      .from('profiles')
+      .update({ generations_used: used + 1, usage_reset_at: resetAtIso })
+      .eq('id', user.id)
+    if (usageError) console.error('usage update failed', usageError)
+
+    return json({
+      generated_letter: result.cover_letter,
+      match_analysis,
+      status: 'completed',
+      usage: plan === 'pro'
+        ? { plan, used: null, limit: null }
+        : { plan, used: used + 1, limit: FREE_MONTHLY_LIMIT },
+    })
   } catch (err) {
     console.error(err)
     return json({ error: 'Erro inesperado ao gerar a aplicação.' }, 500)

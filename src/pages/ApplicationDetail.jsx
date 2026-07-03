@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient.js'
 import { generateApplication } from '../lib/api.js'
+import { useProfile } from '../context/ProfileContext.jsx'
+import { STAGES } from './Dashboard.jsx'
 import Spinner, { FullPageSpinner } from '../components/Spinner.jsx'
 
 export default function ApplicationDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { reload: reloadProfile } = useProfile()
 
   const [application, setApplication] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -21,7 +24,7 @@ export default function ApplicationDetail() {
     setLoading(true)
     const { data, error: err } = await supabase
       .from('applications')
-      .select('id, company_name, job_description, generated_letter, match_analysis, status, created_at')
+      .select('id, company_name, job_description, generated_letter, match_analysis, status, stage, created_at')
       .eq('id', id)
       .single()
 
@@ -48,6 +51,18 @@ export default function ApplicationDetail() {
       return
     }
     await load()
+    reloadProfile() // atualiza o contador de gerações do plano
+  }
+
+  async function handleStageChange(stage) {
+    setError(null)
+    const prev = application
+    setApplication((a) => ({ ...a, stage }))
+    const { error: err } = await supabase.from('applications').update({ stage }).eq('id', id)
+    if (err) {
+      setApplication(prev)
+      setError(err.message)
+    }
   }
 
   async function handleSaveLetter() {
@@ -99,17 +114,41 @@ export default function ApplicationDetail() {
           <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
           <p className="mt-1 text-sm text-slate-500">Resultado da análise por IA</p>
         </div>
-        <button
-          onClick={handleRegenerate}
-          disabled={regenerating}
-          className="btn-secondary shrink-0"
-        >
-          {regenerating ? <Spinner label="Gerando..." /> : hasResult ? 'Gerar novamente' : 'Gerar agora'}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <select
+            value={application.stage || 'saved'}
+            onChange={(e) => handleStageChange(e.target.value)}
+            title="Etapa da candidatura"
+            className="rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-700"
+          >
+            {STAGES.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={handleRegenerate}
+            disabled={regenerating}
+            className="btn-secondary"
+          >
+            {regenerating ? <Spinner label="Gerando..." /> : hasResult ? 'Gerar novamente' : 'Gerar agora'}
+          </button>
+        </div>
       </div>
 
       {error && (
-        <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+        <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+          {error.includes('Pro') && (
+            <>
+              {' '}
+              <Link to="/dashboard/upgrade" className="font-semibold underline underline-offset-2">
+                Ver planos
+              </Link>
+            </>
+          )}
+        </p>
       )}
 
       {!hasResult && !regenerating && (
@@ -137,6 +176,26 @@ export default function ApplicationDetail() {
                 keywords={analysis.keywords_missing}
                 emptyText="Nada faltando — ótimo!"
               />
+            </div>
+          )}
+
+          {/* Interview prep */}
+          {Array.isArray(analysis?.interview_tips) && analysis.interview_tips.length > 0 && (
+            <div className="card mt-6 p-6 sm:p-8">
+              <h2 className="text-lg font-semibold text-slate-900">
+                🎯 Prepare-se para a entrevista
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Perguntas prováveis desta vaga e como responder com base no seu currículo.
+              </p>
+              <ul className="mt-4 grid gap-3">
+                {analysis.interview_tips.map((t, i) => (
+                  <li key={i} className="rounded-xl bg-slate-50 p-4">
+                    <p className="text-sm font-semibold text-slate-900">{t.question}</p>
+                    {t.tip && <p className="mt-1.5 text-sm text-slate-600">{t.tip}</p>}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
