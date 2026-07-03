@@ -14,14 +14,14 @@ export default function Logo({ to = '/', className = '' }) {
           />
           <path
             d="M15 11.5l1.8 1.8L20 10"
-            stroke="#bfdbfe"
+            stroke="#F0C8B3"
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
         </svg>
       </span>
-      <span className="text-lg text-slate-900">
+      <span className="font-display text-lg font-semibold text-slate-900">
         Match<span className="text-brand-600">CV</span>
       </span>
     </span>
