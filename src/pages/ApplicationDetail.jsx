@@ -12,6 +12,8 @@ export default function ApplicationDetail() {
 
   const [application, setApplication] = useState(null)
   const [resumeText, setResumeText] = useState(null)
+  const [resumes, setResumes] = useState([])
+  const [selectedResumeId, setSelectedResumeId] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -21,29 +23,37 @@ export default function ApplicationDetail() {
   const [copied, setCopied] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
 
+  const [notes, setNotes] = useState('')
+  const [notesStatus, setNotesStatus] = useState('') // '' | 'saving' | 'saved'
+
   async function load() {
     setLoading(true)
-    const { data, error: err } = await supabase
-      .from('applications')
-      .select('id, company_name, job_description, generated_letter, match_analysis, status, stage, resume_id, created_at')
-      .eq('id', id)
-      .single()
+    const [{ data, error: err }, resumesRes] = await Promise.all([
+      supabase
+        .from('applications')
+        .select(
+          'id, company_name, job_description, job_url, notes, generated_letter, match_analysis, status, stage, resume_id, created_at',
+        )
+        .eq('id', id)
+        .single(),
+      supabase
+        .from('resumes')
+        .select('id, title, extracted_text, created_at')
+        .order('created_at', { ascending: false }),
+    ])
 
     if (err) setError(err.message)
     else {
       setApplication(data)
       setLetter(data.generated_letter ?? '')
-      // Usa a versão do currículo vinculada a ESTA análise (repositório).
-      if (data.resume_id) {
-        const { data: r } = await supabase
-          .from('resumes')
-          .select('extracted_text')
-          .eq('id', data.resume_id)
-          .maybeSingle()
-        setResumeText(r?.extracted_text ?? null)
-      } else {
-        setResumeText(null)
-      }
+      setNotes(data.notes ?? '')
+      const allResumes = resumesRes.data ?? []
+      setResumes(allResumes)
+      // Currículo usado nesta análise (repositório) → também é o pré-selecionado.
+      const activeId = data.resume_id || allResumes[0]?.id || ''
+      setSelectedResumeId(activeId)
+      const active = allResumes.find((r) => r.id === activeId)
+      setResumeText(active?.extracted_text ?? null)
     }
     setLoading(false)
   }
@@ -56,6 +66,18 @@ export default function ApplicationDetail() {
   async function handleRegenerate() {
     setError(null)
     setRegenerating(true)
+    // Se o usuário escolheu outro currículo, vincula antes de gerar.
+    if (selectedResumeId && selectedResumeId !== application.resume_id) {
+      const { error: linkErr } = await supabase
+        .from('applications')
+        .update({ resume_id: selectedResumeId })
+        .eq('id', id)
+      if (linkErr) {
+        setRegenerating(false)
+        setError(linkErr.message)
+        return
+      }
+    }
     const { error: genErr } = await generateApplication(id)
     setRegenerating(false)
     if (genErr) {
@@ -64,6 +86,23 @@ export default function ApplicationDetail() {
     }
     await load()
     reloadProfile() // atualiza o contador de gerações do plano
+  }
+
+  async function saveNotes() {
+    if (notes === (application.notes ?? '')) return
+    setNotesStatus('saving')
+    const { error: err } = await supabase
+      .from('applications')
+      .update({ notes })
+      .eq('id', id)
+    if (err) {
+      setNotesStatus('')
+      setError(err.message)
+      return
+    }
+    setApplication((prev) => ({ ...prev, notes }))
+    setNotesStatus('saved')
+    setTimeout(() => setNotesStatus(''), 1500)
   }
 
   async function handleStageChange(stage) {
@@ -131,25 +170,76 @@ export default function ApplicationDetail() {
       <div className="mt-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
         <div>
           <h1 className="text-3xl font-semibold text-slate-900">{title}</h1>
-          <p className="mt-1 text-sm text-slate-500">Análise da candidatura</p>
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+            Análise da candidatura
+            {application.job_url && (
+              <a
+                href={application.job_url}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-brand-600 hover:text-brand-700"
+              >
+                🔗 abrir a vaga
+              </a>
+            )}
+          </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <select
-            value={application.stage || 'saved'}
-            onChange={(e) => handleStageChange(e.target.value)}
-            title="Etapa da candidatura"
-            className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
-          >
-            {STAGES.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-          <button onClick={handleRegenerate} disabled={regenerating} className="btn-secondary">
-            {regenerating ? <Spinner label="Gerando..." /> : hasResult ? 'Gerar novamente' : 'Gerar agora'}
-          </button>
+        <select
+          value={application.stage || 'saved'}
+          onChange={(e) => handleStageChange(e.target.value)}
+          title="Etapa da candidatura"
+          className="shrink-0 rounded-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+        >
+          {STAGES.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.emoji} {s.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Regerar escolhendo a versão do currículo (inclusive uma recém-enviada) */}
+      <div className="card mt-4 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-2">
+          <span className="text-slate-500">Currículo desta análise:</span>
+          {resumes.length > 1 ? (
+            <select
+              value={selectedResumeId}
+              onChange={(e) => setSelectedResumeId(e.target.value)}
+              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-800"
+            >
+              {resumes.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.title}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="font-medium text-slate-800">
+              {resumes[0]?.title ?? 'Currículo principal'}{' '}
+              <Link to="/dashboard/profile" className="text-xs font-normal text-brand-600">
+                (enviar outro)
+              </Link>
+            </span>
+          )}
         </div>
+        <button
+          onClick={handleRegenerate}
+          disabled={regenerating}
+          className="btn-primary shrink-0"
+        >
+          {regenerating ? (
+            <Spinner label="Gerando..." />
+          ) : hasResult ? (
+            selectedResumeId !== application.resume_id ? (
+              'Gerar com este currículo'
+            ) : (
+              'Gerar novamente'
+            )
+          ) : (
+            'Gerar agora'
+          )}
+        </button>
       </div>
 
       {error && (
@@ -301,6 +391,31 @@ export default function ApplicationDetail() {
           )}
         </>
       )}
+
+      {/* ===== Anotações da candidatura (contatos, datas, follow-up) ===== */}
+      <div className="card mt-6 p-6 sm:p-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">Suas anotações</h2>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Só você vê. Registre contatos, datas, o que combinou na entrevista.
+            </p>
+          </div>
+          {notesStatus === 'saving' && <span className="text-xs text-slate-400">salvando…</span>}
+          {notesStatus === 'saved' && <span className="text-xs text-olive-600">✓ salvo</span>}
+        </div>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          onBlur={saveNotes}
+          rows={4}
+          className="input mt-4 resize-y text-sm leading-relaxed"
+          placeholder={
+            'Ex.: Recrutadora Ana (LinkedIn) — respondeu dia 03/07.\nEntrevista técnica marcada p/ 10/07 às 15h.\nRevisar projeto de RV antes.'
+          }
+        />
+        <p className="mt-1.5 text-xs text-slate-400">Salva automaticamente ao sair do campo.</p>
+      </div>
     </div>
   )
 }
