@@ -24,6 +24,11 @@ export default function Navbar() {
       <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4 sm:px-6">
         <Logo to="/dashboard" />
         <div className="flex items-center gap-3">
+          {profile?.role === 'admin' && (
+            <Link to="/admin" className="btn-ghost px-2 text-sm">
+              Admin
+            </Link>
+          )}
           <Link to="/dashboard/profile" title="Meu perfil e currículos">
             {avatarUrl ? (
               <img

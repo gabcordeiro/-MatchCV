@@ -1,5 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
 import { supabase } from '../lib/supabaseClient.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProfile } from '../context/ProfileContext.jsx'
@@ -7,7 +16,7 @@ import Spinner from '../components/Spinner.jsx'
 
 const STATUS_LABELS = {
   draft: { label: 'Rascunho', className: 'bg-slate-100 text-slate-600' },
-  completed: { label: 'Concluída', className: 'bg-emerald-100 text-emerald-700' },
+  completed: { label: 'Concluída', className: 'bg-olive-100 text-olive-700' },
   generated: { label: 'Gerada', className: 'bg-brand-100 text-brand-700' },
 }
 
@@ -20,6 +29,7 @@ export const STAGES = [
 ]
 
 const FREE_LIMIT = 3
+const STALE_DAYS = 30
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -29,6 +39,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [view, setView] = useState(() => localStorage.getItem('matchcv:view') || 'kanban')
+  const [celebrateId, setCelebrateId] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -36,7 +47,7 @@ export default function Dashboard() {
       setLoading(true)
       const { data, error: err } = await supabase
         .from('applications')
-        .select('id, company_name, job_description, status, stage, match_analysis, created_at')
+        .select('id, company_name, job_description, job_url, status, stage, match_analysis, created_at')
         .order('created_at', { ascending: false })
 
       if (!active) return
@@ -56,8 +67,14 @@ export default function Dashboard() {
   }
 
   async function moveStage(id, stage) {
+    const current = applications.find((a) => a.id === id)
+    if (!current || current.stage === stage) return
     const prev = applications
     setApplications((apps) => apps.map((a) => (a.id === id ? { ...a, stage } : a)))
+    if (stage === 'offer') {
+      setCelebrateId(id)
+      setTimeout(() => setCelebrateId(null), 1400)
+    }
     const { error: err } = await supabase.from('applications').update({ stage }).eq('id', id)
     if (err) {
       setApplications(prev)
@@ -69,7 +86,7 @@ export default function Dashboard() {
     <div>
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Minhas aplicações</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Minhas aplicações</h1>
           <p className="mt-1 text-sm text-slate-500">
             Acompanhe cada candidatura, da vaga salva até a oferta.
           </p>
@@ -93,7 +110,7 @@ export default function Dashboard() {
       )}
 
       <div className="mt-5 flex items-center justify-between gap-3">
-        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
+        <div className="inline-flex rounded-full border border-slate-200 bg-white p-0.5">
           <ViewButton active={view === 'kanban'} onClick={() => switchView('kanban')}>
             Kanban
           </ViewButton>
@@ -101,10 +118,15 @@ export default function Dashboard() {
             Lista
           </ViewButton>
         </div>
+        {view === 'kanban' && (
+          <span className="hidden text-xs text-slate-400 sm:inline">
+            Arraste os cards entre as colunas (funciona no celular: segure e arraste)
+          </span>
+        )}
       </div>
 
       {error && (
-        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+        <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
       )}
 
       <div className="mt-4">
@@ -115,7 +137,11 @@ export default function Dashboard() {
         ) : applications.length === 0 ? (
           <EmptyState />
         ) : view === 'kanban' ? (
-          <KanbanBoard applications={applications} onMove={moveStage} />
+          <KanbanBoard
+            applications={applications}
+            onMove={moveStage}
+            celebrateId={celebrateId}
+          />
         ) : (
           <ul className="grid gap-3">
             {applications.map((app) => (
@@ -132,7 +158,7 @@ function ViewButton({ active, onClick, children }) {
   return (
     <button
       onClick={onClick}
-      className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+      className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
         active ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'
       }`}
     >
@@ -154,12 +180,18 @@ function UsageBanner({ profile }) {
 
   const resetPassed = profile.usage_reset_at && new Date(profile.usage_reset_at) <= new Date()
   const used = resetPassed ? 0 : (profile.generations_used ?? 0)
+  const credits = profile.credits ?? 0
 
   return (
     <div className="mt-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
       <span>
         Plano Free — <span className="font-semibold text-slate-900">{used} de {FREE_LIMIT}</span>{' '}
         gerações usadas este mês
+        {credits > 0 && (
+          <>
+            {' '}· <span className="font-semibold text-slate-900">{credits}</span> créditos avulsos
+          </>
+        )}
       </span>
       <Link to="/dashboard/upgrade" className="font-semibold text-brand-600 hover:text-brand-700">
         Fazer upgrade →
@@ -168,54 +200,115 @@ function UsageBanner({ profile }) {
   )
 }
 
-function KanbanBoard({ applications, onMove }) {
+/* ===== Kanban com drag-and-drop (mouse E toque no celular) ===== */
+function KanbanBoard({ applications, onMove, celebrateId }) {
+  const sensors = useSensors(
+    // Mouse: começa a arrastar após 6px (cliques continuam funcionando).
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    // Toque: segura ~180ms para arrastar (o scroll da página continua livre).
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+  )
+  const lastDragAt = useRef(0)
+
+  function handleDragEnd(event) {
+    lastDragAt.current = Date.now()
+    const stage = event.over?.id
+    const id = event.active?.id
+    if (stage && id) onMove(String(id), String(stage))
+  }
+
   return (
-    <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0">
-      {STAGES.map((stage) => {
-        const items = applications.filter((a) => (a.stage || 'saved') === stage.id)
-        return (
-          <div
+    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0">
+        {STAGES.map((stage) => (
+          <KanbanColumn
             key={stage.id}
-            className="w-64 shrink-0 snap-start rounded-2xl border border-slate-200 bg-slate-100/70 p-3"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault()
-              const id = e.dataTransfer.getData('text/plain')
-              if (id) onMove(id, stage.id)
-            }}
-          >
-            <div className="flex items-center justify-between px-1">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {stage.label}
-              </h3>
-              <span className="text-xs text-slate-400">{items.length}</span>
-            </div>
-            <ul className="mt-2 grid min-h-[48px] gap-2">
-              {items.map((app) => (
-                <KanbanCard key={app.id} app={app} onMove={onMove} />
-              ))}
-            </ul>
-          </div>
-        )
-      })}
+            stage={stage}
+            items={applications.filter((a) => (a.stage || 'saved') === stage.id)}
+            onMove={onMove}
+            celebrateId={celebrateId}
+            lastDragAt={lastDragAt}
+          />
+        ))}
+      </div>
+    </DndContext>
+  )
+}
+
+function KanbanColumn({ stage, items, onMove, celebrateId, lastDragAt }) {
+  const { setNodeRef, isOver } = useDroppable({ id: stage.id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`w-64 shrink-0 snap-start rounded-2xl border p-3 transition-colors ${
+        isOver
+          ? 'border-brand-400 bg-brand-50/70 ring-2 ring-brand-200'
+          : 'border-slate-200 bg-slate-100/70'
+      }`}
+    >
+      <div className="flex items-center justify-between px-1">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {stage.id === 'offer' ? '🏆 ' : ''}
+          {stage.label}
+        </h3>
+        <span className="text-xs text-slate-400">{items.length}</span>
+      </div>
+      <ul className="mt-2 grid min-h-[48px] gap-2">
+        {items.map((app) => (
+          <KanbanCard
+            key={app.id}
+            app={app}
+            onMove={onMove}
+            celebrating={celebrateId === app.id}
+            lastDragAt={lastDragAt}
+          />
+        ))}
+      </ul>
     </div>
   )
 }
 
-function KanbanCard({ app, onMove }) {
+function KanbanCard({ app, onMove, celebrating, lastDragAt }) {
   const navigate = useNavigate()
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: app.id,
+  })
+
   const title = app.company_name?.trim() || 'Vaga sem empresa'
   const score = app.match_analysis?.match_score
+  const isStale =
+    (app.stage || 'saved') === 'applied' &&
+    Date.now() - new Date(app.created_at).getTime() > STALE_DAYS * 24 * 60 * 60 * 1000
+
+  const style = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+    : undefined
+
+  function handleClick() {
+    // Não navega logo após soltar um drag.
+    if (Date.now() - lastDragAt.current < 200) return
+    navigate(`/dashboard/app/${app.id}`)
+  }
 
   return (
     <li
-      draggable
-      onDragStart={(e) => e.dataTransfer.setData('text/plain', app.id)}
-      onClick={() => navigate(`/dashboard/app/${app.id}`)}
-      className="cursor-pointer rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition-colors hover:border-brand-300"
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      onClick={handleClick}
+      className={`cursor-grab touch-manipulation rounded-xl border bg-white p-3 shadow-sm transition-[box-shadow,border-color] ${
+        isDragging
+          ? 'z-50 rotate-2 scale-105 cursor-grabbing border-brand-400 shadow-xl'
+          : 'border-slate-200 hover:border-brand-300'
+      } ${celebrating ? 'animate-pop border-olive-400 ring-2 ring-olive-300' : ''}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <h4 className="truncate text-sm font-semibold text-slate-900">{title}</h4>
+        <h4 className="truncate text-sm font-semibold text-slate-900">
+          {celebrating && '🎉 '}
+          {title}
+        </h4>
         {typeof score === 'number' && (
           <span className="shrink-0 text-sm font-bold text-brand-600">{score}%</span>
         )}
@@ -223,11 +316,32 @@ function KanbanCard({ app, onMove }) {
       <p className="mt-1 line-clamp-2 text-xs text-slate-500">
         {app.job_description?.slice(0, 90)}
       </p>
+      {isStale && (
+        <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+          ⏳ {STALE_DAYS}+ dias sem resposta
+        </p>
+      )}
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-[11px] text-slate-400">{formatDate(app.created_at)}</span>
+        <span className="flex items-center gap-2 text-[11px] text-slate-400">
+          {formatDate(app.created_at)}
+          {app.job_url && (
+            <a
+              href={app.job_url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              title="Abrir a vaga"
+              className="text-brand-600 hover:text-brand-700"
+            >
+              🔗
+            </a>
+          )}
+        </span>
         <select
           value={app.stage || 'saved'}
           onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
           onChange={(e) => onMove(app.id, e.target.value)}
           className="rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[11px] text-slate-600"
         >

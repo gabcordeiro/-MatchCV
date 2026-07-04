@@ -1,10 +1,13 @@
 // Supabase Edge Function: create-checkout (Stripe-ready)
 //
-// Cria uma sessão de Checkout do Stripe para assinar o plano Pro.
-// AINDA NÃO ATIVADA — para ativar, veja a seção "Pagamentos (Stripe)" no README:
-//   1. Crie a conta/produto no Stripe e pegue o Price ID.
-//   2. Secrets: STRIPE_SECRET_KEY, STRIPE_PRICE_ID, APP_URL.
-//   3. Deploy desta função (verify_jwt desligado; a auth é validada aqui dentro).
+// Cria uma sessão de Checkout do Stripe para DOIS produtos:
+//   - product: 'pro'     → assinatura mensal recorrente (cartão)
+//   - product: 'credits' → pacote de 10 créditos avulsos (cartão ou Pix,
+//                          pagamento único — Pix não tem recorrência no Stripe BR)
+//
+// AINDA NÃO ATIVADA — veja "Pagamentos (Stripe)" no README:
+//   Secrets: STRIPE_SECRET_KEY, STRIPE_PRICE_ID (Pro mensal),
+//            STRIPE_CREDITS_PRICE_ID (pacote avulso), APP_URL.
 // Enquanto os secrets não existem, responde 503 e o app mostra "em breve".
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -42,8 +45,12 @@ Deno.serve(async (req) => {
 
   try {
     const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')
-    const priceId = Deno.env.get('STRIPE_PRICE_ID')
+    const proPriceId = Deno.env.get('STRIPE_PRICE_ID')
+    const creditsPriceId = Deno.env.get('STRIPE_CREDITS_PRICE_ID')
     const appUrl = Deno.env.get('APP_URL') || req.headers.get('origin') || ''
+
+    const { product = 'pro' } = await req.json().catch(() => ({}))
+    const priceId = product === 'credits' ? creditsPriceId : proPriceId
     if (!stripeKey || !priceId) {
       return json({ error: 'Pagamentos ainda não estão ativados. Em breve!' }, 503)
     }
@@ -71,7 +78,7 @@ Deno.serve(async (req) => {
       .eq('id', user.id)
       .maybeSingle()
 
-    if (profile?.plan === 'pro') {
+    if (product === 'pro' && profile?.plan === 'pro') {
       return json({ error: 'Você já é assinante Pro. 🎉' }, 400)
     }
 
@@ -89,20 +96,29 @@ Deno.serve(async (req) => {
       await admin.from('profiles').update({ stripe_customer_id: customerId }).eq('id', user.id)
     }
 
-    const session = await stripePost(
-      'checkout/sessions',
-      stripeKey,
-      new URLSearchParams({
-        mode: 'subscription',
-        customer: customerId!,
-        'line_items[0][price]': priceId,
-        'line_items[0][quantity]': '1',
-        success_url: `${appUrl}/dashboard?checkout=success`,
-        cancel_url: `${appUrl}/dashboard/upgrade?checkout=cancelled`,
-        client_reference_id: user.id,
-        'subscription_data[metadata][user_id]': user.id,
-      }),
-    )
+    const params = new URLSearchParams({
+      customer: customerId!,
+      'line_items[0][price]': priceId,
+      'line_items[0][quantity]': '1',
+      success_url: `${appUrl}/dashboard?checkout=success`,
+      cancel_url: `${appUrl}/dashboard/upgrade?checkout=cancelled`,
+      client_reference_id: user.id,
+    })
+
+    if (product === 'credits') {
+      // Pagamento único: cartão OU Pix (Pix não suporta recorrência no Stripe BR).
+      params.set('mode', 'payment')
+      params.append('payment_method_types[]', 'card')
+      params.append('payment_method_types[]', 'pix')
+      params.set('metadata[type]', 'credits')
+      params.set('metadata[credits]', '10')
+      params.set('metadata[user_id]', user.id)
+    } else {
+      params.set('mode', 'subscription')
+      params.set('subscription_data[metadata][user_id]', user.id)
+    }
+
+    const session = await stripePost('checkout/sessions', stripeKey, params)
 
     return json({ url: session.url })
   } catch (err) {

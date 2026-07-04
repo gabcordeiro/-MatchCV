@@ -22,11 +22,29 @@ export async function generateApplication(applicationId) {
   return { data }
 }
 
-// Inicia o checkout do Stripe para assinar o plano Pro.
+// Ações administrativas (set_plan, set_active, add_credits) — só admins.
+export async function adminAction(payload) {
+  const { data, error } = await supabase.functions.invoke('admin-actions', {
+    body: payload,
+  })
+  if (error) {
+    let message = error.message || 'Ação falhou.'
+    try {
+      const body = await error.context?.json?.()
+      if (body?.error) message = body.error
+    } catch {
+      /* mantém a mensagem padrão */
+    }
+    return { error: message }
+  }
+  return { data }
+}
+
+// Inicia o checkout do Stripe: product = 'pro' (assinatura) | 'credits' (avulso/Pix).
 // Enquanto os pagamentos não estiverem ativados, retorna um aviso amigável.
-export async function createCheckout() {
+export async function createCheckout(product = 'pro') {
   const { data, error } = await supabase.functions.invoke('create-checkout', {
-    body: {},
+    body: { product },
   })
 
   if (error) {

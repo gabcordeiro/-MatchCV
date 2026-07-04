@@ -9,6 +9,7 @@ import NewApplication from './pages/NewApplication.jsx'
 import ApplicationDetail from './pages/ApplicationDetail.jsx'
 import Upgrade from './pages/Upgrade.jsx'
 import Profile from './pages/Profile.jsx'
+import Admin from './pages/Admin.jsx'
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/dashboard/app/:id" element={<ApplicationDetail />} />
           <Route path="/dashboard/upgrade" element={<Upgrade />} />
           <Route path="/dashboard/profile" element={<Profile />} />
+          <Route path="/admin" element={<Admin />} />
         </Route>
       </Route>
 

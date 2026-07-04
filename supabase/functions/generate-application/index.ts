@@ -105,9 +105,13 @@ Deno.serve(async (req) => {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('base_resume, plan, generations_used, usage_reset_at')
+      .select('base_resume, plan, generations_used, usage_reset_at, credits, is_active')
       .eq('id', user.id)
       .maybeSingle()
+
+    if (profile?.is_active === false) {
+      return json({ error: 'Esta conta está desativada. Fale com o suporte.' }, 403)
+    }
 
     // Currículo: usa a versão do repositório vinculada à análise;
     // sem vínculo, cai no base_resume legado do perfil.
@@ -133,14 +137,21 @@ Deno.serve(async (req) => {
       used = 0
       resetAtIso = nextMonthUtc(now).toISOString()
     }
+    // Free esgotado? Créditos avulsos entram como fallback antes do paywall.
+    const credits = profile?.credits ?? 0
+    let usedCredit = false
     if (plan !== 'pro' && used >= FREE_MONTHLY_LIMIT) {
-      return json(
-        {
-          error: `Você já usou as ${FREE_MONTHLY_LIMIT} gerações grátis deste mês. Assine o plano Pro para gerar sem limites.`,
-          code: 'limit_reached',
-        },
-        402,
-      )
+      if (credits > 0) {
+        usedCredit = true
+      } else {
+        return json(
+          {
+            error: `Você já usou as ${FREE_MONTHLY_LIMIT} gerações grátis deste mês. Assine o Pro (ilimitado) ou compre um pacote de créditos.`,
+            code: 'limit_reached',
+          },
+          402,
+        )
+      }
     }
 
     const groqRes = await fetch(GROQ_API_URL, {
@@ -179,11 +190,15 @@ Deno.serve(async (req) => {
     const result = normalizeResult(parseModelJson(text))
     if (!result.cover_letter) return json({ error: 'A IA não retornou uma carta válida.' }, 502)
 
+    // Dicas de entrevista são recurso Pro: para free, guarda vazio + flag de
+    // bloqueio (gate no servidor — o dado nunca chega ao cliente free).
+    const isPro = plan === 'pro'
     const match_analysis = {
       match_score: result.match_score,
       keywords_present: result.keywords_present,
       keywords_missing: result.keywords_missing,
-      interview_tips: result.interview_tips,
+      interview_tips: isPro ? result.interview_tips : [],
+      tips_locked: !isPro,
     }
 
     const { error: updateError } = await supabase
@@ -198,9 +213,12 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
+    const usageUpdate = usedCredit
+      ? { credits: credits - 1 }
+      : { generations_used: used + 1, usage_reset_at: resetAtIso }
     const { error: usageError } = await admin
       .from('profiles')
-      .update({ generations_used: used + 1, usage_reset_at: resetAtIso })
+      .update(usageUpdate)
       .eq('id', user.id)
     if (usageError) console.error('usage update failed', usageError)
 
@@ -210,7 +228,12 @@ Deno.serve(async (req) => {
       status: 'completed',
       usage: plan === 'pro'
         ? { plan, used: null, limit: null }
-        : { plan, used: used + 1, limit: FREE_MONTHLY_LIMIT },
+        : {
+            plan,
+            used: usedCredit ? used : used + 1,
+            limit: FREE_MONTHLY_LIMIT,
+            credits: usedCredit ? credits - 1 : credits,
+          },
     })
   } catch (err) {
     console.error(err)

@@ -68,7 +68,25 @@ Deno.serve(async (req) => {
       case 'checkout.session.completed': {
         const session = event.data.object
         const userId = session.client_reference_id || session.metadata?.user_id
-        if (userId) {
+        if (!userId) break
+
+        if (session.mode === 'payment' || session.metadata?.type === 'credits') {
+          // Pacote de créditos avulso (cartão ou Pix): soma ao saldo.
+          const amount = Number(session.metadata?.credits ?? 10)
+          const { data: target } = await admin
+            .from('profiles')
+            .select('credits')
+            .eq('id', userId)
+            .maybeSingle()
+          await admin
+            .from('profiles')
+            .update({
+              credits: (target?.credits ?? 0) + (Number.isFinite(amount) ? amount : 10),
+              stripe_customer_id: session.customer,
+            })
+            .eq('id', userId)
+        } else {
+          // Assinatura Pro.
           await admin
             .from('profiles')
             .update({

@@ -36,7 +36,13 @@ entrevista**, salva tudo no banco (`generated_letter`, `match_analysis`,
 - **Free**: 3 gerações por mês (contador `generations_used` em `profiles`, resetado
   mensalmente). O limite é **enforçado no servidor**, na Edge Function — o usuário não
   consegue editar as colunas de plano/uso (ver migration 0003).
-- **Pro** (R$ 14,90/mês sugerido): gerações ilimitadas, via assinatura Stripe.
+- **Pro** (R$ 19,90/mês): gerações ilimitadas + perguntas de entrevista (gate no
+  servidor), via assinatura Stripe.
+- **Pacote de créditos** (R$ 9,90 / 10 análises): pagamento único via Pix ou cartão
+  (`create-checkout` com `product: 'credits'` → webhook soma em `profiles.credits`).
+- **Admin**: rota `/admin` (role `admin` em `profiles`, leitura ampla via RLS;
+  escrita administrativa pela função `admin-actions` com service role).
+- Precificação e plano de marketing: [`docs/PRECIFICACAO_E_MARKETING.md`](docs/PRECIFICACAO_E_MARKETING.md).
 
 ## Como rodar localmente
 
@@ -61,6 +67,9 @@ npm install
    - [`0004_resumes.sql`](supabase/migrations/0004_resumes.sql) — repositório de
      currículos: tabela `resumes` (versões, RLS por dono), `applications.resume_id`
      e bucket privado `resumes` para PDFs (preview via URL assinada).
+   - [`0005_roles_admin_credits.sql`](supabase/migrations/0005_roles_admin_credits.sql) —
+     roles user/admin (`is_admin()` + policies de leitura ampla p/ admin), conta
+     ativa/desativada, créditos avulsos, email no profile e link da vaga.
    > Usando a Supabase CLI? Rode `supabase db push` com o projeto linkado.
 
 ### 3. Configurar variáveis de ambiente

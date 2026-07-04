@@ -263,7 +263,24 @@ export default function ApplicationDetail() {
             </div>
           </div>
 
-          {/* ===== Preparação para a entrevista ===== */}
+          {/* ===== Preparação para a entrevista (recurso Pro) ===== */}
+          {analysis?.tips_locked && (
+            <div className="card mt-6 border-dashed p-6 text-center sm:p-8">
+              <span className="text-2xl" aria-hidden="true">
+                🔒
+              </span>
+              <h2 className="mt-2 text-xl font-semibold text-slate-900">
+                Perguntas prováveis da entrevista
+              </h2>
+              <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
+                Assinantes Pro recebem 5 perguntas que essa vaga provavelmente vai fazer —
+                com a dica de resposta baseada no <em>seu</em> currículo.
+              </p>
+              <Link to="/dashboard/upgrade" className="btn-primary mt-4 inline-flex">
+                Desbloquear com o Pro
+              </Link>
+            </div>
+          )}
           {Array.isArray(analysis?.interview_tips) && analysis.interview_tips.length > 0 && (
             <div className="card mt-6 p-6 sm:p-8">
               <h2 className="text-xl font-semibold text-slate-900">

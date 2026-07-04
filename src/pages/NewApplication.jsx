@@ -14,6 +14,7 @@ export default function NewApplication() {
 
   const [jobDescription, setJobDescription] = useState('')
   const [companyName, setCompanyName] = useState('')
+  const [jobUrl, setJobUrl] = useState('')
   const [status, setStatus] = useState('') // '' | 'saving' | 'generating'
   const [error, setError] = useState(null)
   // Reaproveita o rascunho já criado se o usuário tentar de novo (evita duplicatas).
@@ -58,6 +59,7 @@ export default function NewApplication() {
       job_description: jobDescription.trim(),
       status: 'draft',
       resume_id: resumeId || null,
+      job_url: jobUrl.trim() || null,
     }
 
     // 1. Salva (ou atualiza) o rascunho no banco.
@@ -164,18 +166,33 @@ export default function NewApplication() {
           <p className="mt-1.5 text-xs text-slate-400">{jobDescription.trim().length} caracteres</p>
         </div>
 
-        <div>
-          <label htmlFor="company" className="label">
-            Nome da empresa <span className="text-slate-400">(opcional)</span>
-          </label>
-          <input
-            id="company"
-            type="text"
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            className="input"
-            placeholder="Ex.: Nubank"
-          />
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <label htmlFor="company" className="label">
+              Nome da empresa <span className="text-slate-400">(opcional)</span>
+            </label>
+            <input
+              id="company"
+              type="text"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              className="input"
+              placeholder="Ex.: Nubank"
+            />
+          </div>
+          <div>
+            <label htmlFor="jobUrl" className="label">
+              Link da vaga <span className="text-slate-400">(opcional)</span>
+            </label>
+            <input
+              id="jobUrl"
+              type="url"
+              value={jobUrl}
+              onChange={(e) => setJobUrl(e.target.value)}
+              className="input"
+              placeholder="https://..."
+            />
+          </div>
         </div>
 
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}

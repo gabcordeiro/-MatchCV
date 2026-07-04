@@ -10,6 +10,19 @@ export default function AppLayout() {
 
   if (loading) return <FullPageSpinner />
 
+  if (profile && profile.is_active === false) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-slate-50 px-4">
+        <div className="card max-w-sm p-8 text-center">
+          <h1 className="text-xl font-semibold text-slate-900">Conta desativada</h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Esta conta foi desativada. Se você acha que foi um engano, fale com o suporte.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   if (profile && !profile.onboarded) {
     return <Navigate to="/onboarding" replace />
   }

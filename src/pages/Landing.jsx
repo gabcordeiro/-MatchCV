@@ -139,7 +139,9 @@ export default function Landing() {
                 <p className="mt-2 text-slate-600">
                   <span className="font-semibold text-slate-900">Free:</span> 3 análises
                   por mês. <span className="font-semibold text-slate-900">Pro:</span>{' '}
-                  R$ 14,90/mês, ilimitado. Cancela quando quiser, sem drama.
+                  R$ 19,90/mês, ilimitado + preparação de entrevista. Ou{' '}
+                  <span className="font-semibold text-slate-900">10 análises por R$ 9,90</span>{' '}
+                  no Pix, sem assinatura. Cancela quando quiser, sem drama.
                 </p>
               </div>
               <Link to={primaryTo} className="btn-primary shrink-0 px-7 py-3.5 text-base">
