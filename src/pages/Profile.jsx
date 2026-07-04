@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient.js'
 import { extractPdfText } from '../lib/pdf.js'
+import { openCustomerPortal } from '../lib/api.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProfile } from '../context/ProfileContext.jsx'
 import AvatarUpload from '../components/AvatarUpload.jsx'
@@ -75,6 +76,9 @@ export default function Profile() {
         </div>
       </div>
 
+      {/* Pagamento e assinatura (cartões ficam no Stripe, nunca aqui) */}
+      <BillingSection profile={profile} />
+
       {/* Evolução do score (gamificação sutil, sem gráfico decorativo) */}
       {scored.length >= 2 && <ScoreEvolution scored={scored} />}
 
@@ -107,6 +111,54 @@ export default function Profile() {
             </ul>
           )}
         </>
+      )}
+    </div>
+  )
+}
+
+/* ===== Pagamento: cartão e assinatura são geridos pelo Stripe ===== */
+function BillingSection({ profile }) {
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState(null)
+
+  async function handlePortal() {
+    setNotice(null)
+    setBusy(true)
+    const { data, error } = await openCustomerPortal()
+    setBusy(false)
+    if (data?.url) {
+      window.location.href = data.url
+      return
+    }
+    setNotice(error)
+  }
+
+  return (
+    <div className="card mt-6 p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Pagamento e assinatura</h2>
+          <p className="mt-1 max-w-md text-sm text-slate-500">
+            Seus cartões ficam guardados com segurança no <strong>Stripe</strong> — nunca nos
+            nossos servidores. Troque o cartão, veja faturas ou cancele por lá.
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+          <button onClick={handlePortal} disabled={busy} className="btn-secondary">
+            {busy ? <Spinner label="Abrindo..." /> : '💳 Gerenciar pagamento'}
+          </button>
+          {profile?.plan !== 'pro' && (
+            <Link
+              to="/dashboard/upgrade"
+              className="text-xs font-semibold text-brand-600 hover:text-brand-700"
+            >
+              Ver planos →
+            </Link>
+          )}
+        </div>
+      </div>
+      {notice && (
+        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{notice}</p>
       )}
     </div>
   )

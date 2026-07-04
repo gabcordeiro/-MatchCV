@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useProfile } from '../context/ProfileContext.jsx'
 import { FullPageSpinner } from './Spinner.jsx'
 import Navbar from './Navbar.jsx'
@@ -7,6 +7,7 @@ import Navbar from './Navbar.jsx'
 // completed onboarding yet, so it only runs once on first access.
 export default function AppLayout() {
   const { profile, loading } = useProfile()
+  const location = useLocation()
 
   if (loading) return <FullPageSpinner />
 
@@ -30,7 +31,11 @@ export default function AppLayout() {
   return (
     <div className="min-h-screen bg-slate-50">
       <Navbar />
-      <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+      {/* key por rota: cada página entra com um fade sutil */}
+      <main
+        key={location.pathname}
+        className="animate-fadein mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8"
+      >
         <Outlet />
       </main>
     </div>

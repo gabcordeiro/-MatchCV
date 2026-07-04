@@ -113,6 +113,24 @@ supabase functions deploy generate-application --no-verify-jwt
 Para testar a função localmente: `supabase functions serve generate-application`
 (com `GROQ_API_KEY` no seu `supabase/.env`).
 
+### 4b. Login com Google (opcional)
+
+O botão "Continuar com Google" já está na tela de login. Para habilitar:
+
+1. No [Google Cloud Console](https://console.cloud.google.com) → **APIs & Services →
+   Credentials → Create OAuth client ID** (tipo Web). Em *Authorized redirect URIs*,
+   adicione: `https://SEU_PROJECT_REF.supabase.co/auth/v1/callback`
+2. No Supabase → **Authentication → Providers → Google**: ative e cole o Client ID
+   e o Client Secret.
+3. Em **Authentication → URL Configuration**: confira se a *Site URL* é a URL do app
+   no Vercel (senão o redirect volta pro lugar errado).
+
+Enquanto não habilitar, o botão mostra um aviso amigável. O Facebook está como
+placeholder ("em breve") — mesmo processo quando quiser ativar.
+
+> Usuários que entram pelo Google caem no fluxo normal: o trigger cria o profile
+> (com email) e o onboarding aparece no primeiro acesso.
+
 ### 5. Pagamentos (Stripe) — pronto para ativar
 
 O código do checkout e do webhook já está no repositório
@@ -134,6 +152,10 @@ Quando quiser ativar:
    supabase functions deploy create-checkout --no-verify-jwt
    supabase functions deploy stripe-webhook --no-verify-jwt
    ```
+   > A função `customer-portal` (botão "Gerenciar pagamento" no perfil) já está
+   > publicada e passa a funcionar com os mesmos secrets. **Cartões nunca são
+   > armazenados no app** — digitação no Checkout e gestão no Customer Portal,
+   > ambos do Stripe (ative o portal em Settings → Billing → Customer portal).
 4. No painel do Stripe → **Developers → Webhooks**, registre o endpoint
    `https://SEU_PROJECT_REF.supabase.co/functions/v1/stripe-webhook` com os eventos
    `checkout.session.completed`, `customer.subscription.updated` e

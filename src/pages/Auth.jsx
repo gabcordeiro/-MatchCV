@@ -23,12 +23,38 @@ export default function Auth() {
     if (session) navigate('/dashboard', { replace: true })
   }, [session, navigate])
 
+  const isSignup = mode === 'signup'
+
+  // Requisitos mínimos de senha (aplicados só no cadastro).
+  const passwordChecks = [
+    { label: 'Pelo menos 8 caracteres', ok: password.length >= 8 },
+    { label: 'Uma letra maiúscula', ok: /[A-Z]/.test(password) },
+    { label: 'Uma letra minúscula', ok: /[a-z]/.test(password) },
+    { label: 'Um símbolo (!@#$%…)', ok: /[^A-Za-z0-9]/.test(password) },
+  ]
+  const passedCount = passwordChecks.filter((c) => c.ok).length
+  const passwordOk = passedCount === passwordChecks.length
+
   function switchMode(next) {
     setMode(next)
     setError(null)
     setNotice(null)
     setConfirmEmail('')
     setConfirmPassword('')
+  }
+
+  async function handleGoogle() {
+    setError(null)
+    setNotice(null)
+    if (!isSupabaseConfigured) {
+      setError('Supabase ainda não foi configurado. Veja o README para conectar seu projeto.')
+      return
+    }
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/dashboard` },
+    })
+    if (oauthError) setError(translateAuthError(oauthError.message))
   }
 
   async function handleSubmit(e) {
@@ -40,13 +66,13 @@ export default function Auth() {
       setError('Supabase ainda não foi configurado. Veja o README para conectar seu projeto.')
       return
     }
-    if (password.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres.')
-      return
-    }
-    if (mode === 'signup') {
+    if (isSignup) {
       if (email.trim().toLowerCase() !== confirmEmail.trim().toLowerCase()) {
         setError('Os emails não coincidem.')
+        return
+      }
+      if (!passwordOk) {
+        setError('Sua senha ainda não atende aos requisitos abaixo do campo.')
         return
       }
       if (password !== confirmPassword) {
@@ -57,12 +83,10 @@ export default function Auth() {
 
     setSubmitting(true)
     try {
-      if (mode === 'signup') {
+      if (isSignup) {
         const { data, error: signUpError } = await supabase.auth.signUp({ email, password })
         if (signUpError) throw signUpError
 
-        // If email confirmation is disabled, we get a session immediately and
-        // can send the user straight to onboarding.
         if (data.session) {
           navigate('/onboarding', { replace: true })
         } else {
@@ -83,17 +107,15 @@ export default function Auth() {
     }
   }
 
-  const isSignup = mode === 'signup'
-
   return (
     <div className="grid min-h-screen place-items-center bg-slate-50 px-4 py-10">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-sm animate-fadein">
         <div className="mb-6 flex justify-center">
           <Logo to="/" />
         </div>
 
         <div className="card p-6 sm:p-8">
-          <h1 className="text-xl font-bold text-slate-900">
+          <h1 className="text-2xl font-semibold text-slate-900">
             {isSignup ? 'Criar conta grátis' : 'Entrar na sua conta'}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
@@ -109,7 +131,33 @@ export default function Auth() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          {/* Login social */}
+          <div className="mt-6 grid gap-2">
+            <button type="button" onClick={handleGoogle} className="btn-secondary w-full">
+              <GoogleIcon />
+              Continuar com Google
+            </button>
+            <button
+              type="button"
+              disabled
+              title="Em breve"
+              className="btn-secondary w-full opacity-50"
+            >
+              <FacebookIcon />
+              Continuar com Facebook
+              <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] uppercase text-slate-500">
+                em breve
+              </span>
+            </button>
+          </div>
+
+          <div className="my-5 flex items-center gap-3 text-xs text-slate-400">
+            <span className="h-px flex-1 bg-slate-200" />
+            ou com email
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="email" className="label">
                 Email
@@ -157,8 +205,47 @@ export default function Auth() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="input"
-                placeholder="Mínimo 6 caracteres"
+                placeholder={isSignup ? 'Crie uma senha forte' : 'Sua senha'}
               />
+
+              {/* Medidor + checklist de força (só no cadastro) */}
+              {isSignup && (
+                <div className="mt-2">
+                  <div className="flex gap-1">
+                    {passwordChecks.map((_, i) => (
+                      <span
+                        key={i}
+                        className={`h-1 flex-1 rounded-full transition-colors duration-300 ${
+                          i < passedCount
+                            ? passedCount === passwordChecks.length
+                              ? 'bg-olive-500'
+                              : 'bg-amber-400'
+                            : 'bg-slate-200'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                    {passwordChecks.map((c) => (
+                      <li
+                        key={c.label}
+                        className={`flex items-center gap-1.5 text-[11px] transition-colors ${
+                          c.ok ? 'text-olive-700' : 'text-slate-400'
+                        }`}
+                      >
+                        <span
+                          className={`grid h-3.5 w-3.5 place-items-center rounded-full text-[9px] ${
+                            c.ok ? 'bg-olive-100 text-olive-700' : 'bg-slate-100'
+                          }`}
+                        >
+                          {c.ok ? '✓' : ''}
+                        </span>
+                        {c.label}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
             {isSignup && (
@@ -176,6 +263,9 @@ export default function Auth() {
                   className="input"
                   placeholder="Repita sua senha"
                 />
+                {confirmPassword.length > 0 && confirmPassword !== password && (
+                  <p className="mt-1 text-[11px] text-amber-600">As senhas ainda não coincidem.</p>
+                )}
               </div>
             )}
 
@@ -219,10 +309,43 @@ export default function Auth() {
   )
 }
 
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M23.5 12.27c0-.85-.08-1.66-.22-2.45H12v4.64h6.45a5.52 5.52 0 01-2.39 3.62v3h3.87c2.26-2.09 3.57-5.17 3.57-8.81z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.96-1.07 7.93-2.91l-3.87-3c-1.07.72-2.44 1.14-4.06 1.14-3.12 0-5.77-2.11-6.71-4.95H1.29v3.1A12 12 0 0012 24z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.29 14.28a7.2 7.2 0 010-4.56v-3.1H1.29a12 12 0 000 10.76l4-3.1z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.77c1.76 0 3.34.6 4.58 1.79l3.44-3.44C17.95 1.19 15.24 0 12 0A12 12 0 001.29 6.62l4 3.1C6.23 6.88 8.88 4.77 12 4.77z"
+      />
+    </svg>
+  )
+}
+
+function FacebookIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#1877F2" aria-hidden="true">
+      <path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.09 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.7 4.53-4.7 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.26h3.33l-.53 3.49h-2.8V24C19.61 23.09 24 18.1 24 12.07z" />
+    </svg>
+  )
+}
+
 function translateAuthError(message = '') {
   const m = message.toLowerCase()
   if (m.includes('invalid login credentials')) return 'Email ou senha incorretos.'
   if (m.includes('user already registered')) return 'Este email já está cadastrado. Faça login.'
   if (m.includes('email not confirmed')) return 'Confirme seu email antes de entrar.'
+  if (m.includes('provider is not enabled'))
+    return 'Login com Google ainda não foi habilitado no servidor (Supabase → Authentication → Providers → Google).'
   return message || 'Algo deu errado. Tente novamente.'
 }

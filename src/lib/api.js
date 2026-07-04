@@ -22,6 +22,22 @@ export async function generateApplication(applicationId) {
   return { data }
 }
 
+// Abre o Customer Portal do Stripe (gerenciar cartão/assinatura).
+export async function openCustomerPortal() {
+  const { data, error } = await supabase.functions.invoke('customer-portal', { body: {} })
+  if (error) {
+    let message = 'Pagamentos ainda não estão ativados. Em breve!'
+    try {
+      const body = await error.context?.json?.()
+      if (body?.error) message = body.error
+    } catch {
+      /* mantém a mensagem padrão */
+    }
+    return { error: message }
+  }
+  return { data }
+}
+
 // Ações administrativas (set_plan, set_active, add_credits) — só admins.
 export async function adminAction(payload) {
   const { data, error } = await supabase.functions.invoke('admin-actions', {

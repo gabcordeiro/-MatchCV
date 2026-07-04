@@ -305,9 +305,24 @@ export default function ApplicationDetail() {
   )
 }
 
-/* ===== Score sem círculo: número serifado + barra + veredito direto ===== */
+/* ===== Score sem círculo: número serifado que CONTA até o valor + veredito ===== */
 function ScoreBlock({ score = 0 }) {
   const value = Math.max(0, Math.min(100, Number(score) || 0))
+  const [display, setDisplay] = useState(0)
+
+  useEffect(() => {
+    let raf
+    const start = performance.now()
+    const duration = 900
+    const tick = (t) => {
+      const p = Math.min(1, (t - start) / duration)
+      const eased = 1 - Math.pow(1 - p, 3)
+      setDisplay(Math.round(value * eased))
+      if (p < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [value])
   const verdict =
     value >= 75
       ? 'Forte. Ajusta os detalhes e manda.'
@@ -323,7 +338,7 @@ function ScoreBlock({ score = 0 }) {
           Match com a vaga
         </p>
         <p className="mt-1 font-display text-6xl font-semibold leading-none text-slate-900">
-          {value}
+          {display}
           <span className="text-2xl font-normal text-slate-400">/100</span>
         </p>
       </div>
@@ -331,8 +346,8 @@ function ScoreBlock({ score = 0 }) {
         <p className="text-sm font-medium text-slate-700">{verdict}</p>
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
           <div
-            className={`h-full rounded-full ${barColor} transition-all duration-700`}
-            style={{ width: `${value}%` }}
+            className={`h-full rounded-full ${barColor}`}
+            style={{ width: `${display}%` }}
           />
         </div>
       </div>
