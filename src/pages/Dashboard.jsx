@@ -21,11 +21,11 @@ const STATUS_LABELS = {
 }
 
 export const STAGES = [
-  { id: 'saved', label: 'Salvas' },
-  { id: 'applied', label: 'Aplicadas' },
-  { id: 'interview', label: 'Entrevista' },
-  { id: 'offer', label: 'Oferta' },
-  { id: 'rejected', label: 'Recusadas' },
+  { id: 'saved', label: 'Salvas', emoji: '📌', dot: 'bg-slate-400', tint: 'bg-slate-400' },
+  { id: 'applied', label: 'Aplicadas', emoji: '📨', dot: 'bg-brand-500', tint: 'bg-brand-500' },
+  { id: 'interview', label: 'Entrevista', emoji: '🎯', dot: 'bg-amber-500', tint: 'bg-amber-500' },
+  { id: 'offer', label: 'Oferta', emoji: '🏆', dot: 'bg-olive-500', tint: 'bg-olive-500' },
+  { id: 'rejected', label: 'Recusadas', emoji: '✕', dot: 'bg-slate-300', tint: 'bg-slate-300' },
 ]
 
 const FREE_LIMIT = 3
@@ -219,7 +219,7 @@ function KanbanBoard({ applications, onMove, celebrateId }) {
 
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0">
+      <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0 lg:overflow-x-visible">
         {STAGES.map((stage) => (
           <KanbanColumn
             key={stage.id}
@@ -241,29 +241,45 @@ function KanbanColumn({ stage, items, onMove, celebrateId, lastDragAt }) {
   return (
     <div
       ref={setNodeRef}
-      className={`w-64 shrink-0 snap-start rounded-2xl border p-3 transition-colors ${
+      className={`flex w-64 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border transition-colors lg:w-auto lg:flex-1 lg:min-w-0 ${
         isOver
-          ? 'border-brand-400 bg-brand-50/70 ring-2 ring-brand-200'
-          : 'border-slate-200 bg-slate-100/70'
+          ? 'border-brand-400 bg-brand-50/80 ring-2 ring-brand-200'
+          : 'border-slate-200 bg-slate-100/60'
       }`}
     >
-      <div className="flex items-center justify-between px-1">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          {stage.id === 'offer' ? '🏆 ' : ''}
+      {/* faixa de cor da etapa (sensação de funil) */}
+      <div className={`h-1 w-full ${stage.tint}`} />
+
+      <div className="flex items-center justify-between px-3 pt-3">
+        <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <span className={`h-2 w-2 rounded-full ${stage.dot}`} />
           {stage.label}
         </h3>
-        <span className="text-xs text-slate-400">{items.length}</span>
+        <span className="grid h-5 min-w-5 place-items-center rounded-full bg-white px-1.5 text-xs font-medium text-slate-500 shadow-sm">
+          {items.length}
+        </span>
       </div>
-      <ul className="mt-2 grid min-h-[48px] gap-2">
-        {items.map((app) => (
-          <KanbanCard
-            key={app.id}
-            app={app}
-            onMove={onMove}
-            celebrating={celebrateId === app.id}
-            lastDragAt={lastDragAt}
-          />
-        ))}
+
+      <ul className="grid flex-1 gap-2 p-3">
+        {items.length === 0 ? (
+          <li
+            className={`grid min-h-[72px] place-items-center rounded-xl border border-dashed text-center text-[11px] transition-colors ${
+              isOver ? 'border-brand-400 text-brand-600' : 'border-slate-300 text-slate-400'
+            }`}
+          >
+            {isOver ? 'Solte aqui' : `${stage.emoji} arraste vagas para cá`}
+          </li>
+        ) : (
+          items.map((app) => (
+            <KanbanCard
+              key={app.id}
+              app={app}
+              onMove={onMove}
+              celebrating={celebrateId === app.id}
+              lastDragAt={lastDragAt}
+            />
+          ))
+        )}
       </ul>
     </div>
   )
@@ -310,18 +326,23 @@ function KanbanCard({ app, onMove, celebrating, lastDragAt }) {
           {title}
         </h4>
         {typeof score === 'number' && (
-          <span className="shrink-0 text-sm font-bold text-brand-600">{score}%</span>
+          <span
+            title="Compatibilidade com a vaga"
+            className={`shrink-0 rounded-md px-1.5 py-0.5 text-xs font-bold ${scoreChip(score)}`}
+          >
+            {score}%
+          </span>
         )}
       </div>
-      <p className="mt-1 line-clamp-2 text-xs text-slate-500">
-        {app.job_description?.slice(0, 90)}
-      </p>
+      {app.job_description?.trim() && (
+        <p className="mt-1 line-clamp-1 text-xs text-slate-500">{app.job_description.trim()}</p>
+      )}
       {isStale && (
         <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
           ⏳ {STALE_DAYS}+ dias sem resposta
         </p>
       )}
-      <div className="mt-2 flex items-center justify-between gap-2">
+      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
         <span className="flex items-center gap-2 text-[11px] text-slate-400">
           {formatDate(app.created_at)}
           {app.job_url && (
@@ -343,17 +364,25 @@ function KanbanCard({ app, onMove, celebrating, lastDragAt }) {
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
           onChange={(e) => onMove(app.id, e.target.value)}
-          className="rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[11px] text-slate-600"
+          title="Mover para outra etapa"
+          className="cursor-pointer rounded-md border-0 bg-transparent py-0.5 pl-1 pr-4 text-[11px] font-medium text-slate-500 hover:text-brand-600 focus:ring-1 focus:ring-brand-300"
         >
           {STAGES.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.label}
+              {s.emoji} {s.label}
             </option>
           ))}
         </select>
       </div>
     </li>
   )
+}
+
+// Chip de score: verde alto, âmbar médio, terracota baixo (leitura rápida).
+function scoreChip(score) {
+  if (score >= 75) return 'bg-olive-100 text-olive-700'
+  if (score >= 50) return 'bg-amber-100 text-amber-700'
+  return 'bg-brand-100 text-brand-700'
 }
 
 function ApplicationRow({ app }) {
