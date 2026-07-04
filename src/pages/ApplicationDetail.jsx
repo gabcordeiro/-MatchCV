@@ -11,6 +11,7 @@ export default function ApplicationDetail() {
   const { profile, reload: reloadProfile } = useProfile()
 
   const [application, setApplication] = useState(null)
+  const [resumeText, setResumeText] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -24,7 +25,7 @@ export default function ApplicationDetail() {
     setLoading(true)
     const { data, error: err } = await supabase
       .from('applications')
-      .select('id, company_name, job_description, generated_letter, match_analysis, status, stage, created_at')
+      .select('id, company_name, job_description, generated_letter, match_analysis, status, stage, resume_id, created_at')
       .eq('id', id)
       .single()
 
@@ -32,6 +33,17 @@ export default function ApplicationDetail() {
     else {
       setApplication(data)
       setLetter(data.generated_letter ?? '')
+      // Usa a versão do currículo vinculada a ESTA análise (repositório).
+      if (data.resume_id) {
+        const { data: r } = await supabase
+          .from('resumes')
+          .select('extracted_text')
+          .eq('id', data.resume_id)
+          .maybeSingle()
+        setResumeText(r?.extracted_text ?? null)
+      } else {
+        setResumeText(null)
+      }
     }
     setLoading(false)
   }
@@ -186,7 +198,7 @@ export default function ApplicationDetail() {
           )}
 
           {/* ===== Teste dos 7 segundos ===== */}
-          <SevenSecondsTest resume={profile?.base_resume} keywords={allKeywords} />
+          <SevenSecondsTest resume={resumeText || profile?.base_resume} keywords={allKeywords} />
 
           {/* ===== Carta (diff em modo leitura + edição) ===== */}
           <div className="card mt-6 p-6 sm:p-8">

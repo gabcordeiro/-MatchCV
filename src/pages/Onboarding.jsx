@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabaseClient.js'
+import { useAuth } from '../context/AuthContext.jsx'
 import { useProfile } from '../context/ProfileContext.jsx'
 import { FullPageSpinner } from '../components/Spinner.jsx'
 import Spinner from '../components/Spinner.jsx'
@@ -8,6 +10,7 @@ import AvatarUpload from '../components/AvatarUpload.jsx'
 
 export default function Onboarding() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { profile, loading, updateProfile } = useProfile()
 
   const [resume, setResume] = useState('')
@@ -36,6 +39,14 @@ export default function Onboarding() {
     }
     setSaving('save')
     const { error: err } = await updateProfile({ base_resume: resume.trim(), onboarded: true })
+    if (!err) {
+      // Alimenta o repositório de currículos com a primeira versão.
+      await supabase.from('resumes').insert({
+        user_id: user.id,
+        title: 'Currículo principal',
+        extracted_text: resume.trim(),
+      })
+    }
     setSaving('')
     if (err) {
       setError(err)

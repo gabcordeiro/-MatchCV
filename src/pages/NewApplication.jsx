@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient.js'
 import { generateApplication } from '../lib/api.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -10,6 +10,7 @@ export default function NewApplication() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { profile } = useProfile()
+  const [searchParams] = useSearchParams()
 
   const [jobDescription, setJobDescription] = useState('')
   const [companyName, setCompanyName] = useState('')
@@ -18,8 +19,29 @@ export default function NewApplication() {
   // Reaproveita o rascunho já criado se o usuário tentar de novo (evita duplicatas).
   const [draftId, setDraftId] = useState(null)
 
+  // Repositório: qual versão do currículo usar nesta análise.
+  const [resumes, setResumes] = useState([])
+  const [resumeId, setResumeId] = useState(searchParams.get('resume') || '')
+
+  useEffect(() => {
+    let active = true
+    supabase
+      .from('resumes')
+      .select('id, title, created_at')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (!active || !data) return
+        setResumes(data)
+        // Sem pré-seleção via URL? Usa a versão mais recente.
+        setResumeId((current) => current || data[0]?.id || '')
+      })
+    return () => {
+      active = false
+    }
+  }, [user])
+
   const busy = status !== ''
-  const hasResume = Boolean(profile?.base_resume)
+  const hasResume = resumes.length > 0 || Boolean(profile?.base_resume)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -35,6 +57,7 @@ export default function NewApplication() {
       company_name: companyName.trim() || null,
       job_description: jobDescription.trim(),
       status: 'draft',
+      resume_id: resumeId || null,
     }
 
     // 1. Salva (ou atualiza) o rascunho no banco.
@@ -91,14 +114,41 @@ export default function NewApplication() {
 
       {!hasResume && (
         <div className="mt-5 flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
-          <span>Você precisa de um currículo base para a IA gerar a análise.</span>
-          <Link to="/onboarding" className="font-semibold underline underline-offset-2">
+          <span>Você precisa de um currículo para a IA gerar a análise.</span>
+          <Link to="/dashboard/profile" className="font-semibold underline underline-offset-2">
             Adicionar currículo
           </Link>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="card mt-6 space-y-5 p-6 sm:p-8">
+        {resumes.length > 0 && (
+          <div>
+            <label htmlFor="resume" className="label">
+              Currículo usado na análise
+            </label>
+            <select
+              id="resume"
+              value={resumeId}
+              onChange={(e) => setResumeId(e.target.value)}
+              className="input"
+            >
+              {resumes.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.title}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-xs text-slate-400">
+              Gerencie as versões no{' '}
+              <Link to="/dashboard/profile" className="font-medium text-brand-600">
+                seu perfil
+              </Link>
+              .
+            </p>
+          </div>
+        )}
+
         <div>
           <label htmlFor="job" className="label">
             Descrição da vaga <span className="text-red-500">*</span>

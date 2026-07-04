@@ -24,6 +24,7 @@ personalizadas** e **analisar a compatibilidade do currículo com a vaga** usand
 | `/dashboard/new`  | Formulário de nova aplicação (vaga + empresa) → gera com IA      |
 | `/dashboard/app/:id` | Resultado: carta editável, match score, keywords e **dicas de entrevista** |
 | `/dashboard/upgrade` | Planos Free x Pro (checkout via Stripe quando ativado)        |
+| `/dashboard/profile` | Perfil: foto, repositório de currículos (PDF com preview inline ou texto), evolução do score e "reanalisar com vaga nova" |
 
 Ao clicar em **"Gerar"**, o app salva a aplicação, chama a IA (via Edge Function) para
 criar a **carta de apresentação**, a **análise de compatibilidade** e as **dicas de
@@ -57,6 +58,9 @@ npm install
    - [`0003_kanban_billing.sql`](supabase/migrations/0003_kanban_billing.sql) —
      coluna `stage` (kanban) e colunas de plano/uso/Stripe em `profiles`
      (protegidas: só o servidor pode alterá-las).
+   - [`0004_resumes.sql`](supabase/migrations/0004_resumes.sql) — repositório de
+     currículos: tabela `resumes` (versões, RLS por dono), `applications.resume_id`
+     e bucket privado `resumes` para PDFs (preview via URL assinada).
    > Usando a Supabase CLI? Rode `supabase db push` com o projeto linkado.
 
 ### 3. Configurar variáveis de ambiente

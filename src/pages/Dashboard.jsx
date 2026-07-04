@@ -85,8 +85,8 @@ export default function Dashboard() {
 
       {profile && !profile.base_resume && (
         <div className="mt-4 flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
-          <span>Você ainda não adicionou seu currículo base. Ele deixa as análises muito melhores.</span>
-          <Link to="/onboarding" className="font-semibold underline underline-offset-2">
+          <span>Você ainda não adicionou seu currículo. Ele deixa as análises muito melhores.</span>
+          <Link to="/dashboard/profile" className="font-semibold underline underline-offset-2">
             Adicionar currículo
           </Link>
         </div>

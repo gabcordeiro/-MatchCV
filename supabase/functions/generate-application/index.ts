@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
     if (userError || !user) return json({ error: 'Sessão inválida.' }, 401)
 
     const { data: application, error: appError } = await supabase
-      .from('applications').select('id, job_description').eq('id', application_id).single()
+      .from('applications').select('id, job_description, resume_id').eq('id', application_id).single()
     if (appError || !application) return json({ error: 'Aplicação não encontrada.' }, 404)
     if (!application.job_description?.trim()) return json({ error: 'A descrição da vaga está vazia.' }, 400)
 
@@ -109,8 +109,20 @@ Deno.serve(async (req) => {
       .eq('id', user.id)
       .maybeSingle()
 
-    const baseResume = profile?.base_resume?.trim()
-    if (!baseResume) return json({ error: 'Adicione seu currículo base no perfil antes de gerar.' }, 400)
+    // Currículo: usa a versão do repositório vinculada à análise;
+    // sem vínculo, cai no base_resume legado do perfil.
+    let resumeText: string | null = null
+    if (application.resume_id) {
+      const { data: resumeRow } = await supabase
+        .from('resumes')
+        .select('extracted_text')
+        .eq('id', application.resume_id)
+        .maybeSingle()
+      resumeText = resumeRow?.extracted_text?.trim() || null
+    }
+    if (!resumeText) resumeText = profile?.base_resume?.trim() || null
+    const baseResume = resumeText
+    if (!baseResume) return json({ error: 'Adicione um currículo no seu perfil antes de gerar.' }, 400)
 
     // --- Limite do plano (enforçado no servidor) ---
     const plan = profile?.plan ?? 'free'
