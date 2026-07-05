@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient.js'
 import { generateApplication } from '../lib/api.js'
+import { exportLetterPdf } from '../lib/exportPdf.js'
 import { useProfile } from '../context/ProfileContext.jsx'
 import { STAGES } from './Dashboard.jsx'
 import Spinner, { FullPageSpinner } from '../components/Spinner.jsx'
@@ -25,6 +26,7 @@ export default function ApplicationDetail() {
 
   const [notes, setNotes] = useState('')
   const [notesStatus, setNotesStatus] = useState('') // '' | 'saving' | 'saved'
+  const [followUp, setFollowUp] = useState('')
 
   async function load() {
     setLoading(true)
@@ -32,7 +34,7 @@ export default function ApplicationDetail() {
       supabase
         .from('applications')
         .select(
-          'id, company_name, job_description, job_url, notes, generated_letter, match_analysis, status, stage, resume_id, created_at',
+          'id, company_name, job_description, job_url, notes, follow_up_at, score_history, generated_letter, match_analysis, status, stage, resume_id, created_at',
         )
         .eq('id', id)
         .single(),
@@ -47,6 +49,7 @@ export default function ApplicationDetail() {
       setApplication(data)
       setLetter(data.generated_letter ?? '')
       setNotes(data.notes ?? '')
+      setFollowUp(data.follow_up_at ? String(data.follow_up_at).slice(0, 10) : '')
       const allResumes = resumesRes.data ?? []
       setResumes(allResumes)
       // Currículo usado nesta análise (repositório) → também é o pré-selecionado.
@@ -78,12 +81,27 @@ export default function ApplicationDetail() {
         return
       }
     }
-    const { error: genErr } = await generateApplication(id)
+    const { data: genData, error: genErr } = await generateApplication(id)
     setRegenerating(false)
     if (genErr) {
       setError(genErr)
       return
     }
+
+    // Registra o score desta geração no histórico (comparativo de versões).
+    // Feito aqui (RLS permite o dono escrever) em vez de na Edge Function,
+    // então funciona mesmo sem redeploy da função.
+    const newScore = genData?.match_analysis?.match_score
+    if (typeof newScore === 'number') {
+      const prevHistory = Array.isArray(application?.score_history) ? application.score_history : []
+      const resumeIdUsed = selectedResumeId || application?.resume_id || null
+      const score_history = [
+        ...prevHistory,
+        { resume_id: resumeIdUsed, score: newScore, at: new Date().toISOString() },
+      ].slice(-12)
+      await supabase.from('applications').update({ score_history }).eq('id', id)
+    }
+
     await load()
     reloadProfile() // atualiza o contador de gerações do plano
   }
@@ -103,6 +121,16 @@ export default function ApplicationDetail() {
     setApplication((prev) => ({ ...prev, notes }))
     setNotesStatus('saved')
     setTimeout(() => setNotesStatus(''), 1500)
+  }
+
+  async function saveFollowUp(value) {
+    setFollowUp(value)
+    const { error: err } = await supabase
+      .from('applications')
+      .update({ follow_up_at: value || null })
+      .eq('id', id)
+    if (err) setError(err.message)
+    else setApplication((prev) => ({ ...prev, follow_up_at: value || null }))
   }
 
   async function handleStageChange(stage) {
@@ -287,6 +315,14 @@ export default function ApplicationDetail() {
             </div>
           )}
 
+          {/* ===== Comparativo de versões do currículo ===== */}
+          <ScoreComparison history={application.score_history} resumes={resumes} />
+
+          {/* ===== Cobrir lacunas: termos faltantes → frases prontas ===== */}
+          {analysis?.keywords_missing?.length > 0 && (
+            <GapFiller keywords={analysis.keywords_missing} />
+          )}
+
           {/* ===== Teste dos 7 segundos ===== */}
           <SevenSecondsTest resume={resumeText || profile?.base_resume} keywords={allKeywords} />
 
@@ -340,9 +376,8 @@ export default function ApplicationDetail() {
                   </button>
                 )}
                 <button
-                  onClick={() => alert('Exportação em PDF chega na próxima etapa.')}
+                  onClick={() => exportLetterPdf(letter, application.company_name)}
                   className="btn-secondary"
-                  title="Em breve"
                 >
                   Exportar PDF
                 </button>
@@ -415,7 +450,126 @@ export default function ApplicationDetail() {
           }
         />
         <p className="mt-1.5 text-xs text-slate-400">Salva automaticamente ao sair do campo.</p>
+
+        {/* Lembrete de follow-up (vira badge no kanban) */}
+        <div className="mt-5 flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <label htmlFor="followup" className="text-sm font-medium text-slate-700">
+              ⏰ Dar retorno em
+            </label>
+            <p className="text-xs text-slate-400">Aparece como lembrete no card do kanban.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              id="followup"
+              type="date"
+              value={followUp}
+              onChange={(e) => saveFollowUp(e.target.value)}
+              className="input w-auto py-1.5 text-sm"
+            />
+            {followUp && (
+              <button
+                onClick={() => saveFollowUp('')}
+                className="btn-ghost px-2 py-1 text-xs text-slate-400"
+              >
+                limpar
+              </button>
+            )}
+          </div>
+        </div>
       </div>
+    </div>
+  )
+}
+
+/* ===== Comparativo de score por versão do currículo ===== */
+function ScoreComparison({ history, resumes = [] }) {
+  const entries = Array.isArray(history) ? history : []
+  if (entries.length < 2) return null
+
+  const titleFor = (rid) => resumes.find((r) => r.id === rid)?.title || 'Currículo'
+  const best = Math.max(...entries.map((e) => Number(e.score) || 0))
+
+  return (
+    <div className="card mt-6 p-6 sm:p-8">
+      <h2 className="text-xl font-semibold text-slate-900">Evolução desta análise</h2>
+      <p className="mt-0.5 text-sm text-slate-500">
+        Cada vez que você gera, guardamos o score — dá pra ver qual currículo combina mais.
+      </p>
+      <ol className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-3">
+        {entries.map((e, i) => {
+          const score = Number(e.score) || 0
+          const isBest = score === best
+          return (
+            <li key={i} className="flex items-center gap-2">
+              {i > 0 && <span className="text-slate-300">→</span>}
+              <div
+                className={`rounded-xl border px-3 py-2 text-center ${
+                  isBest ? 'border-olive-300 bg-olive-50' : 'border-slate-200 bg-white'
+                }`}
+              >
+                <div className={`font-display text-lg font-semibold ${isBest ? 'text-olive-700' : 'text-slate-800'}`}>
+                  {score}%
+                </div>
+                <div className="max-w-[120px] truncate text-[11px] text-slate-400">
+                  {titleFor(e.resume_id)}
+                  {isBest && ' ★'}
+                </div>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
+/* ===== Cobrir lacunas: cada termo faltante vira uma frase pronta ===== */
+function GapFiller({ keywords = [] }) {
+  const [copiedIdx, setCopiedIdx] = useState(-1)
+
+  function phraseFor(kw) {
+    return `${kw}: [descreva onde você usou ${kw} e qual resultado entregou].`
+  }
+
+  async function copy(kw, i) {
+    try {
+      await navigator.clipboard.writeText(phraseFor(kw))
+      setCopiedIdx(i)
+      setTimeout(() => setCopiedIdx(-1), 1500)
+    } catch {
+      /* ignora */
+    }
+  }
+
+  return (
+    <div className="card mt-6 p-6 sm:p-8">
+      <h2 className="text-xl font-semibold text-slate-900">Cubra as lacunas do currículo</h2>
+      <p className="mt-0.5 text-sm text-slate-500">
+        A vaga pede estes termos e eles não apareceram. Se você tem essa experiência, adicione
+        uma linha — copie o modelo e complete.
+      </p>
+      <ul className="mt-4 grid gap-2">
+        {keywords.map((kw, i) => (
+          <li
+            key={`${kw}-${i}`}
+            className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-3"
+          >
+            <p className="text-sm text-slate-700">
+              <span className="font-semibold text-slate-900">• {kw}</span>{' '}
+              <span className="text-slate-500">
+                [descreva onde você usou {kw} e qual resultado entregou].
+              </span>
+            </p>
+            <button
+              onClick={() => copy(kw, i)}
+              className="btn-ghost shrink-0 px-2 py-1 text-xs"
+            >
+              {copiedIdx === i ? '✓' : 'Copiar'}
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

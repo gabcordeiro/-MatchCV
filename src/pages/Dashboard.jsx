@@ -47,7 +47,7 @@ export default function Dashboard() {
       setLoading(true)
       const { data, error: err } = await supabase
         .from('applications')
-        .select('id, company_name, job_description, job_url, status, stage, match_analysis, created_at')
+        .select('id, company_name, job_description, job_url, status, stage, match_analysis, follow_up_at, created_at')
         .order('created_at', { ascending: false })
 
       if (!active) return
@@ -219,7 +219,7 @@ function KanbanBoard({ applications, onMove, celebrateId }) {
 
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0 lg:overflow-x-visible">
+      <div className="-mx-4 flex snap-x items-start gap-3 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0 lg:overflow-x-visible">
         {STAGES.map((stage) => (
           <KanbanColumn
             key={stage.id}
@@ -260,14 +260,14 @@ function KanbanColumn({ stage, items, onMove, celebrateId, lastDragAt }) {
         </span>
       </div>
 
-      <ul className="grid flex-1 gap-2 p-3">
+      <ul className="flex flex-col gap-2 p-3">
         {items.length === 0 ? (
           <li
-            className={`grid min-h-[72px] place-items-center rounded-xl border border-dashed text-center text-[11px] transition-colors ${
-              isOver ? 'border-brand-400 text-brand-600' : 'border-slate-300 text-slate-400'
+            className={`grid min-h-[64px] place-items-center rounded-xl border border-dashed text-center text-[11px] transition-colors ${
+              isOver ? 'border-brand-400 text-brand-600' : 'border-slate-200 text-slate-400'
             }`}
           >
-            {isOver ? 'Solte aqui' : `${stage.emoji} arraste vagas para cá`}
+            {isOver ? 'Solte aqui' : 'arraste vagas para cá'}
           </li>
         ) : (
           items.map((app) => (
@@ -293,7 +293,9 @@ function KanbanCard({ app, onMove, celebrating, lastDragAt }) {
 
   const title = app.company_name?.trim() || 'Vaga sem empresa'
   const score = app.match_analysis?.match_score
+  const followUp = followUpBadge(app.follow_up_at)
   const isStale =
+    !followUp &&
     (app.stage || 'saved') === 'applied' &&
     Date.now() - new Date(app.created_at).getTime() > STALE_DAYS * 24 * 60 * 60 * 1000
 
@@ -336,6 +338,13 @@ function KanbanCard({ app, onMove, celebrating, lastDragAt }) {
       </div>
       {app.job_description?.trim() && (
         <p className="mt-1 line-clamp-1 text-xs text-slate-500">{app.job_description.trim()}</p>
+      )}
+      {followUp && (
+        <p
+          className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${followUp.className}`}
+        >
+          ⏰ {followUp.label}
+        </p>
       )}
       {isStale && (
         <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
@@ -383,6 +392,22 @@ function scoreChip(score) {
   if (score >= 75) return 'bg-olive-100 text-olive-700'
   if (score >= 50) return 'bg-amber-100 text-amber-700'
   return 'bg-brand-100 text-brand-700'
+}
+
+// Badge de follow-up: atrasado (vermelho), hoje/logo (âmbar), futuro (neutro).
+function followUpBadge(followUpAt) {
+  if (!followUpAt) return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const target = new Date(followUpAt)
+  target.setHours(0, 0, 0, 0)
+  const days = Math.round((target - today) / (24 * 60 * 60 * 1000))
+
+  if (days < 0) return { label: 'retorno atrasado', className: 'bg-red-50 text-red-700' }
+  if (days === 0) return { label: 'dar retorno hoje', className: 'bg-amber-100 text-amber-800' }
+  if (days === 1) return { label: 'retorno amanhã', className: 'bg-amber-50 text-amber-700' }
+  if (days <= 3) return { label: `retorno em ${days} dias`, className: 'bg-amber-50 text-amber-700' }
+  return { label: `retorno em ${days} dias`, className: 'bg-slate-100 text-slate-500' }
 }
 
 function ApplicationRow({ app }) {
