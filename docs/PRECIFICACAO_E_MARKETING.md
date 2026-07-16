@@ -12,7 +12,7 @@
 | IA por análise (Groq, llama-3.3-70b) | ~R$ 0,01–0,02 | ~2,5k tokens entrada + 1,2k saída. No free tier atual: R$ 0 |
 | Supabase (banco, auth, storage, functions) | R$ 0/mês | Plano free aguenta milhares de usuários iniciais |
 | Vercel (frontend) | R$ 0/mês | Plano hobby |
-| Stripe | 3,99% + R$ 0,39/transação (cartão BR) · Pix ~1,19% | Só paga quando recebe |
+| Mercado Pago | ~4,99% (cartão BR) · Pix ~0,99% | Só paga quando recebe. Aceita CPF (sem CNPJ) |
 | **Custo fixo total hoje** | **~R$ 0/mês** | Único custo real é variável e desprezível |
 
 **Conclusão:** o preço NÃO é definido pelo custo (margem ~99%). É definido por
@@ -48,7 +48,7 @@ brasileiro e ainda deixa margem enorme.
 ## 4. Plano de marketing (ordem de execução)
 
 ### Fase 0 — Antes de gastar R$ 1 (semana 1–2)
-1. **Ativar o Stripe** (sem isso, marketing gera tráfego que não vira receita).
+1. **Ativar o Mercado Pago** (sem isso, marketing gera tráfego que não vira receita).
 2. **Instrumentar**: painel /admin já mostra análises/dia e conversão; adicionar UTM nos links.
 3. **Prova social real**: use o app você mesmo em 5 vagas reais; peça pra 10 amigos usarem; capture prints de resultados (com permissão) para a landing.
 
@@ -72,8 +72,8 @@ brasileiro e ainda deixa margem enorme.
 ## 5. Próximos passos (checklist)
 
 **Produto (técnica):**
-- [ ] Ativar Stripe: conta + 2 produtos (Pro R$ 19,90 recorrente; Créditos R$ 9,90 avulso com Pix habilitado no dashboard do Stripe) + secrets + deploy das funções `create-checkout` e `stripe-webhook` (ver README)
-- [ ] Testar compra em modo test do Stripe (cartão 4242...)
+- [ ] Ativar Mercado Pago: conta (CPF) + Access Token + secrets + deploy das funções `create-checkout` e `mercadopago-webhook` (ver README)
+- [ ] Testar compra em modo test do Mercado Pago (cartão de teste + Pix)
 - [ ] Exportar carta em PDF (única promessa da UI ainda pendente)
 - [ ] E-mail transacional de boas-vindas (Supabase Auth já manda confirmação)
 - [ ] Automação de vagas paradas (badge já existe; mover automático exige pg_cron — opcional)

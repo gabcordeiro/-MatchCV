@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient.js'
 import { extractPdfText } from '../lib/pdf.js'
-import { openCustomerPortal } from '../lib/api.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProfile } from '../context/ProfileContext.jsx'
 import AvatarUpload from '../components/AvatarUpload.jsx'
@@ -76,7 +75,7 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* Pagamento e assinatura (cartões ficam no Stripe, nunca aqui) */}
+      {/* Pagamento e assinatura (cartões ficam no Mercado Pago, nunca aqui) */}
       <BillingSection profile={profile} />
 
       {/* Evolução do score (gamificação sutil, sem gráfico decorativo) */}
@@ -116,37 +115,28 @@ export default function Profile() {
   )
 }
 
-/* ===== Pagamento: cartão e assinatura são geridos pelo Stripe ===== */
+/* ===== Pagamento: cartão e assinatura são geridos pelo Mercado Pago ===== */
 function BillingSection({ profile }) {
-  const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState(null)
-
-  async function handlePortal() {
-    setNotice(null)
-    setBusy(true)
-    const { data, error } = await openCustomerPortal()
-    setBusy(false)
-    if (data?.url) {
-      window.location.href = data.url
-      return
-    }
-    setNotice(error)
-  }
-
   return (
     <div className="card mt-6 p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Pagamento e assinatura</h2>
           <p className="mt-1 max-w-md text-sm text-slate-500">
-            Seus cartões ficam guardados com segurança no <strong>Stripe</strong> — nunca nos
-            nossos servidores. Troque o cartão, veja faturas ou cancele por lá.
+            Seus cartões ficam guardados com segurança no <strong>Mercado Pago</strong> — nunca
+            nos nossos servidores. Pra trocar o cartão, ver faturas ou cancelar a assinatura,
+            acesse sua conta Mercado Pago → menu <strong>Suas assinaturas</strong>.
           </p>
         </div>
         <div className="flex shrink-0 flex-col gap-2 sm:items-end">
-          <button onClick={handlePortal} disabled={busy} className="btn-secondary">
-            {busy ? <Spinner label="Abrindo..." /> : '💳 Gerenciar pagamento'}
-          </button>
+          <a
+            href="https://www.mercadopago.com.br"
+            target="_blank"
+            rel="noreferrer"
+            className="btn-secondary"
+          >
+            Abrir Mercado Pago →
+          </a>
           {profile?.plan !== 'pro' && (
             <Link
               to="/dashboard/upgrade"
@@ -157,9 +147,6 @@ function BillingSection({ profile }) {
           )}
         </div>
       </div>
-      {notice && (
-        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{notice}</p>
-      )}
     </div>
   )
 }

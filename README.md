@@ -23,7 +23,7 @@ personalizadas** e **analisar a compatibilidade do currículo com a vaga** usand
 | `/dashboard`      | **Kanban de candidaturas** (Salvas → Aplicadas → Entrevista → Oferta → Recusadas) + visão em lista |
 | `/dashboard/new`  | Formulário de nova aplicação (vaga + empresa) → gera com IA      |
 | `/dashboard/app/:id` | Resultado: carta editável, match score, keywords e **dicas de entrevista** |
-| `/dashboard/upgrade` | Planos Free x Pro (checkout via Stripe quando ativado)        |
+| `/dashboard/upgrade` | Planos Free x Pro (checkout via Mercado Pago quando ativado)  |
 | `/dashboard/profile` | Perfil: foto, repositório de currículos (PDF com preview inline ou texto), evolução do score e "reanalisar com vaga nova" |
 
 Ao clicar em **"Gerar"**, o app salva a aplicação, chama a IA (via Edge Function) para
@@ -37,7 +37,7 @@ entrevista**, salva tudo no banco (`generated_letter`, `match_analysis`,
   mensalmente). O limite é **enforçado no servidor**, na Edge Function — o usuário não
   consegue editar as colunas de plano/uso (ver migration 0003).
 - **Pro** (R$ 19,90/mês): gerações ilimitadas + perguntas de entrevista (gate no
-  servidor), via assinatura Stripe.
+  servidor), via assinatura Mercado Pago (Preapproval).
 - **Pacote de créditos** (R$ 9,90 / 10 análises): pagamento único via Pix ou cartão
   (`create-checkout` com `product: 'credits'` → webhook soma em `profiles.credits`).
 - **Admin**: rota `/admin` (role `admin` em `profiles`, leitura ampla via RLS;
@@ -70,6 +70,17 @@ npm install
    - [`0005_roles_admin_credits.sql`](supabase/migrations/0005_roles_admin_credits.sql) —
      roles user/admin (`is_admin()` + policies de leitura ampla p/ admin), conta
      ativa/desativada, créditos avulsos, email no profile e link da vaga.
+   - [`0006_application_notes.sql`](supabase/migrations/0006_application_notes.sql) —
+     coluna `notes` (anotações pessoais por candidatura).
+   - [`0007_score_history_followup.sql`](supabase/migrations/0007_score_history_followup.sql) —
+     `score_history` (comparativo de score por versão) e `follow_up_at`.
+   - [`0008_payments_ledger.sql`](supabase/migrations/0008_payments_ledger.sql) —
+     tabela `payments` (ledger `pending → paid` por cobrança) e `payment_webhook_events`
+     (idempotência do webhook), ambas RLS: dono/admin só leem, escrita é só via
+     service role nas Edge Functions.
+   - [`0009_mercadopago_profiles.sql`](supabase/migrations/0009_mercadopago_profiles.sql) —
+     remove `stripe_customer_id` e renomeia `stripe_subscription_id` para
+     `mercadopago_subscription_id` em `profiles`.
    > Usando a Supabase CLI? Rode `supabase db push` com o projeto linkado.
 
 ### 3. Configurar variáveis de ambiente
@@ -131,40 +142,52 @@ placeholder ("em breve") — mesmo processo quando quiser ativar.
 > Usuários que entram pelo Google caem no fluxo normal: o trigger cria o profile
 > (com email) e o onboarding aparece no primeiro acesso.
 
-### 5. Pagamentos (Stripe) — pronto para ativar
+### 5. Pagamentos (Mercado Pago) — pronto para ativar
 
 O código do checkout e do webhook já está no repositório
-(`supabase/functions/create-checkout` e `supabase/functions/stripe-webhook`).
+(`supabase/functions/create-checkout` e `supabase/functions/mercadopago-webhook`).
 Enquanto não forem ativados, o botão "Assinar Pro" mostra "em breve" — nada quebra.
+
+> Por que Mercado Pago e não Stripe: o Stripe exige verificação de identidade mais
+> rígida para pessoa física sem CNPJ; o Mercado Pago aceita CPF direto e o Pix é
+> nativo — essencial pro público brasileiro.
 
 Quando quiser ativar:
 
-1. Crie uma conta em [stripe.com](https://stripe.com) e, no painel, um **Produto**
-   "MatchCV Pro" com um **preço recorrente mensal** (ex.: R$ 14,90). Copie o
-   **Price ID** (`price_...`).
+1. Crie uma conta em [mercadopago.com.br](https://www.mercadopago.com.br) (aceita
+   CPF, sem precisar de CNPJ) e gere um **Access Token** em
+   **Suas integrações → Criar aplicação → Credenciais** (`TEST-...` para testar,
+   depois a de produção).
 2. Configure os secrets das Edge Functions (Dashboard → Edge Functions → Secrets):
-   - `STRIPE_SECRET_KEY` — chave secreta do Stripe (`sk_live_...` ou `sk_test_...`)
-   - `STRIPE_PRICE_ID` — o `price_...` do passo 1
+   - `MP_ACCESS_TOKEN` — o Access Token do passo 1
+   - `MP_WEBHOOK_SECRET` — gerado ao registrar a URL do webhook (passo 4)
    - `APP_URL` — URL do app (ex.: `https://match-cv-nine.vercel.app`)
+   - Opcional: `MP_PRO_AMOUNT` (default `19.90`), `MP_CREDITS_AMOUNT` (default
+     `9.90`), `MP_CREDITS_QTY` (default `10`) — pra mudar preço sem redeploy.
 3. Deploy das duas funções (com verificação de JWT desligada — a auth do checkout é
-   validada dentro da função e o webhook usa assinatura HMAC do Stripe):
+   validada dentro da função e o webhook usa assinatura HMAC do Mercado Pago):
    ```bash
    supabase functions deploy create-checkout --no-verify-jwt
-   supabase functions deploy stripe-webhook --no-verify-jwt
+   supabase functions deploy mercadopago-webhook --no-verify-jwt
    ```
-   > A função `customer-portal` (botão "Gerenciar pagamento" no perfil) já está
-   > publicada e passa a funcionar com os mesmos secrets. **Cartões nunca são
-   > armazenados no app** — digitação no Checkout e gestão no Customer Portal,
-   > ambos do Stripe (ative o portal em Settings → Billing → Customer portal).
-4. No painel do Stripe → **Developers → Webhooks**, registre o endpoint
-   `https://SEU_PROJECT_REF.supabase.co/functions/v1/stripe-webhook` com os eventos
-   `checkout.session.completed`, `customer.subscription.updated` e
-   `customer.subscription.deleted`. Copie o **Signing secret** (`whsec_...`) e salve
-   como secret `STRIPE_WEBHOOK_SECRET`.
+   > **Cartões nunca são armazenados no app** — digitação e gestão (troca de
+   > cartão, cancelamento) acontecem 100% na página hospedada do Mercado Pago;
+   > o usuário cancela pela própria conta MP em "Suas assinaturas" (sem portal
+   > próprio pra construir).
+4. No painel do Mercado Pago → **Suas integrações → Webhooks**, registre a URL
+   `https://SEU_PROJECT_REF.supabase.co/functions/v1/mercadopago-webhook` com os
+   eventos de **Pagamentos** e **Assinaturas**. Copie a **Assinatura secreta**
+   gerada e salve como secret `MP_WEBHOOK_SECRET`.
 
-Fluxo: usuário clica "Assinar Pro" → `create-checkout` cria a sessão → Stripe cobra →
-`stripe-webhook` recebe `checkout.session.completed` → marca `plan = 'pro'` no perfil.
-Cancelamentos voltam o plano para `free` automaticamente.
+Fluxo (créditos): "Comprar no Pix" → `create-checkout` cria uma linha `pending` em
+`payments` e uma Preferência do Checkout Pro (cartão ou Pix) → usuário paga →
+`mercadopago-webhook` confirma o pagamento (`GET /v1/payments/:id`), marca a linha
+como `paid` e credita `profiles.credits`.
+
+Fluxo (assinatura): "Assinar Pro" → `create-checkout` cria um Preapproval (só
+cartão, Mercado Pago não tem Pix recorrente) → usuário autoriza na página do MP →
+webhook confirma (`status: authorized`) e marca `plan = 'pro'`. Cancelamento pelo
+usuário (na própria conta MP) dispara o webhook de volta e o plano volta pra `free`.
 
 ### 6. Rodar
 

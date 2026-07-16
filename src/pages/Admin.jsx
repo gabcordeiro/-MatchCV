@@ -154,7 +154,7 @@ function Metrics({ users, apps }) {
     ['MRR', `R$ ${mrr.toFixed(2).replace('.', ',')}`, `${proCount} assinantes Pro`],
     ['Conversão free→pago', `${conversion}%`, `${proCount} de ${total} usuários`],
     ['Análises geradas', String(completed), 'total até agora'],
-    ['Churn (30d)', '—', 'disponível após ativar o Stripe'],
+    ['Churn (30d)', '—', 'disponível após ativar o Mercado Pago'],
   ]
 
   return (

@@ -114,7 +114,7 @@ export default function Upgrade() {
       )}
 
       <p className="mt-6 text-center text-xs text-slate-400">
-        Pagamento processado com segurança pelo Stripe. Assinatura cancela quando quiser.
+        Pagamento processado com segurança pelo Mercado Pago. Assinatura cancela quando quiser.
       </p>
     </div>
   )

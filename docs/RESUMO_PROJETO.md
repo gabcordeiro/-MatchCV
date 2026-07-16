@@ -12,7 +12,9 @@ por IA, organizar candidaturas em kanban, e se preparar para entrevistas.
   região us-west-2) — Auth, Postgres (RLS), Storage, Edge Functions
 - **IA:** Groq (`llama-3.3-70b-versatile`, API compatível com OpenAI) —
   free tier generoso, sem cartão. Secret `GROQ_API_KEY` já configurado.
-- **Pagamentos:** Stripe — código pronto, **conta ainda não criada/ativada**
+- **Pagamentos:** Mercado Pago — código pronto, **conta ainda não criada/ativada**
+  (trocado de Stripe: exigia CNPJ pra verificação de identidade tranquila; dono
+  do projeto só tem CPF)
 - **Repositório:** GitHub `gabcordeiro/-MatchCV`
 
 ## Identidade de marca
@@ -30,8 +32,8 @@ por IA, organizar candidaturas em kanban, e se preparar para entrevistas.
 - **Onboarding:** colar currículo no primeiro acesso (ou pular)
 - **Perfil (`/dashboard/profile`):** repositório de currículos — upload de
   PDF (texto extraído no navegador via pdfjs) ou colar texto, preview inline,
-  múltiplas versões, evolução de score, avatar, seção de pagamento (abre
-  Customer Portal do Stripe — cartão nunca fica no nosso banco)
+  múltiplas versões, evolução de score, avatar, seção de pagamento (link pra
+  conta Mercado Pago do usuário — cartão nunca fica no nosso banco)
 - **Nova aplicação:** cola vaga + empresa + link + escolhe currículo → gera
 - **Geração por IA (Edge Function `generate-application`):** carta de
   apresentação, match score, keywords presentes/faltantes, 5 dicas de
@@ -66,26 +68,33 @@ por IA, organizar candidaturas em kanban, e se preparar para entrevistas.
 6. `0006_application_notes.sql` — applications.notes
 7. `0007_score_history_followup.sql` — applications.score_history (jsonb),
    follow_up_at
+8. `0008_payments_ledger.sql` — tabela `payments` (ledger pending→paid) e
+   `payment_webhook_events` (idempotência), escrita só via service role
+9. `0009_mercadopago_profiles.sql` — drop `stripe_customer_id`, rename
+   `stripe_subscription_id` → `mercadopago_subscription_id`
 
 ## Edge Functions (`supabase/functions/`)
 - `generate-application` — chama Groq, aplica limite de plano, gate de
   entrevista Pro (publicada, v9 em produção)
-- `create-checkout` — Stripe Checkout (Pro assinatura | créditos avulso/Pix)
-  — **código pronto, precisa da conta Stripe + secrets pra funcionar**
-- `stripe-webhook` — sincroniza pagamentos com profiles — **idem**
-- `customer-portal` — abre Customer Portal do Stripe (gerenciar cartão) —
-  **idem**
+- `create-checkout` — Mercado Pago (Preapproval p/ assinatura Pro | Preferência
+  de Checkout Pro p/ créditos avulso/Pix) — **código pronto, precisa da conta
+  Mercado Pago + secrets pra funcionar**
+- `mercadopago-webhook` — valida assinatura HMAC, idempotência via
+  `payment_webhook_events`, credita/ativa plano — **idem**
 - `admin-actions` — trocar plano/créditos/desativar conta (checa role no
   servidor, nunca confia no frontend) — publicada
+
+Não existe mais function de "customer portal": no Mercado Pago o usuário
+gerencia/cancela a própria assinatura direto na conta dele (menu "Suas
+assinaturas") — sem portal hospedado pra integrar.
 
 Todas deployadas com `verify_jwt: false` porque a auth real é feita
 dentro da função (getUser + RLS); isso evita bloqueio de CORS no preflight.
 
 ## Pendências conhecidas / próximos passos
-1. **Ativar Stripe** — criar conta, 2 produtos (Pro recorrente + créditos
-   avulso com Pix habilitado), configurar secrets
-   (`STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_CREDITS_PRICE_ID`,
-   `APP_URL`, `STRIPE_WEBHOOK_SECRET`), deploy das 3 funções de billing.
+1. **Ativar Mercado Pago** — criar conta (aceita CPF), gerar Access Token,
+   configurar secrets (`MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `APP_URL`),
+   registrar a URL do webhook no painel MP, deploy das 2 funções de billing.
    Sem isso: MRR/churn no admin ficam zerados, e os botões de compra mostram
    "em breve".
 2. **Habilitar login Google no Supabase** — criar OAuth client no Google
