@@ -14,20 +14,14 @@ import {
 import { supabase } from '../lib/supabaseClient.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProfile } from '../context/ProfileContext.jsx'
+import { STAGES } from '../lib/stages.js'
+import StageSelect from '../components/StageSelect.jsx'
 
 const STATUS_LABELS = {
   draft: { label: 'Rascunho', className: 'bg-slate-100 text-slate-600' },
   completed: { label: 'Concluída', className: 'bg-olive-100 text-olive-700' },
   generated: { label: 'Gerada', className: 'bg-brand-100 text-brand-700' },
 }
-
-export const STAGES = [
-  { id: 'saved', label: 'Salvas', emoji: '📌', dot: 'bg-slate-400', tint: 'bg-slate-400' },
-  { id: 'applied', label: 'Aplicadas', emoji: '📨', dot: 'bg-brand-500', tint: 'bg-brand-500' },
-  { id: 'interview', label: 'Entrevista', emoji: '🎯', dot: 'bg-amber-500', tint: 'bg-amber-500' },
-  { id: 'offer', label: 'Oferta', emoji: '🏆', dot: 'bg-olive-500', tint: 'bg-olive-500' },
-  { id: 'rejected', label: 'Recusadas', emoji: '✕', dot: 'bg-slate-300', tint: 'bg-slate-300' },
-]
 
 const FREE_LIMIT = 3
 const STALE_DAYS = 30
@@ -538,20 +532,7 @@ function CardBody({ app, celebrating = false, onMove = null }) {
           )}
         </span>
         {onMove ? (
-          <select
-            value={app.stage || 'saved'}
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-            onChange={(e) => onMove(app.id, e.target.value)}
-            title="Mover para outra etapa"
-            className="cursor-pointer rounded-md border-0 bg-transparent py-0.5 pl-1 pr-4 text-[11px] font-medium text-slate-500 hover:text-brand-600 focus:ring-1 focus:ring-brand-300"
-          >
-            {STAGES.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.emoji} {s.label}
-              </option>
-            ))}
-          </select>
+          <StageSelect value={app.stage || 'saved'} onChange={(id) => onMove(app.id, id)} size="sm" />
         ) : (
           <span className="text-[11px] font-medium text-slate-400">
             {STAGES.find((s) => s.id === (app.stage || 'saved'))?.label}

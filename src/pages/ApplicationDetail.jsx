@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabaseClient.js'
 import { generateApplication } from '../lib/api.js'
 import { exportLetterPdf } from '../lib/exportPdf.js'
 import { useProfile } from '../context/ProfileContext.jsx'
-import { STAGES } from './Dashboard.jsx'
+import StageSelect from '../components/StageSelect.jsx'
 import Spinner, { FullPageSpinner } from '../components/Spinner.jsx'
 
 export default function ApplicationDetail() {
@@ -212,18 +212,13 @@ export default function ApplicationDetail() {
             )}
           </p>
         </div>
-        <select
-          value={application.stage || 'saved'}
-          onChange={(e) => handleStageChange(e.target.value)}
-          title="Etapa da candidatura"
-          className="shrink-0 rounded-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
-        >
-          {STAGES.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.emoji} {s.label}
-            </option>
-          ))}
-        </select>
+        <div className="shrink-0">
+          <StageSelect
+            value={application.stage || 'saved'}
+            onChange={handleStageChange}
+            size="md"
+          />
+        </div>
       </div>
 
       {/* Regerar escolhendo a versão do currículo (inclusive uma recém-enviada) */}
