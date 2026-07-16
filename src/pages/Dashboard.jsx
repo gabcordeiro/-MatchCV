@@ -247,7 +247,23 @@ function KanbanBoard({ applications, onMove, celebrateId }) {
   )
   const lastDragAt = useRef(0)
   const [activeId, setActiveId] = useState(null)
+  // Colunas recolhidas (Trello-like), lembradas entre sessões.
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('matchcv:kanban:collapsed') || '{}')
+    } catch {
+      return {}
+    }
+  })
   const activeApp = applications.find((a) => a.id === activeId)
+
+  function toggleCollapse(stageId) {
+    setCollapsed((prev) => {
+      const next = { ...prev, [stageId]: !prev[stageId] }
+      localStorage.setItem('matchcv:kanban:collapsed', JSON.stringify(next))
+      return next
+    })
+  }
 
   function handleDragStart(event) {
     setActiveId(event.active?.id ?? null)
@@ -264,11 +280,14 @@ function KanbanBoard({ applications, onMove, celebrateId }) {
   return (
     <DndContext
       sensors={sensors}
+      // Auto-scroll horizontal ao arrastar perto da borda (essencial no celular,
+      // onde as 5 colunas não cabem na tela e antes era preciso soltar e rolar).
+      autoScroll={{ threshold: { x: 0.25, y: 0 }, acceleration: 14 }}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveId(null)}
     >
-      <div className="-mx-4 flex snap-x items-start gap-3 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0 lg:overflow-x-visible">
+      <div className="-mx-4 flex min-h-[320px] snap-x items-stretch gap-3 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0 lg:overflow-x-visible">
         {STAGES.map((stage) => (
           <KanbanColumn
             key={stage.id}
@@ -278,6 +297,8 @@ function KanbanBoard({ applications, onMove, celebrateId }) {
             celebrateId={celebrateId}
             lastDragAt={lastDragAt}
             dragging={!!activeId}
+            collapsed={!!collapsed[stage.id]}
+            onToggleCollapse={() => toggleCollapse(stage.id)}
           />
         ))}
       </div>
@@ -293,8 +314,33 @@ function KanbanBoard({ applications, onMove, celebrateId }) {
   )
 }
 
-function KanbanColumn({ stage, items, onMove, celebrateId, lastDragAt, dragging }) {
+function KanbanColumn({ stage, items, onMove, celebrateId, lastDragAt, dragging, collapsed, onToggleCollapse }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id })
+
+  // Coluna recolhida: faixa fina vertical. Continua sendo alvo de drop — dá pra
+  // soltar um card direto sobre ela sem precisar expandir.
+  if (collapsed) {
+    return (
+      <button
+        ref={setNodeRef}
+        onClick={onToggleCollapse}
+        title={`Expandir ${stage.label}`}
+        className={`flex w-11 shrink-0 cursor-pointer flex-col items-center gap-2 rounded-2xl border py-3 transition-all duration-200 ${
+          isOver
+            ? 'border-brand-400 bg-brand-50 ring-2 ring-brand-200'
+            : 'border-slate-200 bg-slate-100/60 hover:bg-slate-100'
+        }`}
+      >
+        <span className={`h-2 w-2 rounded-full ${stage.dot}`} />
+        <span className="grid h-5 min-w-5 place-items-center rounded-full bg-white px-1 text-xs font-medium text-slate-500 shadow-sm">
+          {items.length}
+        </span>
+        <span className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500 [writing-mode:vertical-rl]">
+          {stage.label}
+        </span>
+      </button>
+    )
+  }
 
   return (
     <div
@@ -310,24 +356,37 @@ function KanbanColumn({ stage, items, onMove, celebrateId, lastDragAt, dragging 
       {/* faixa de cor da etapa (sensação de funil) */}
       <div className={`h-1 w-full ${stage.tint}`} />
 
-      <div className="flex items-center justify-between px-3 pt-3">
+      <div className="flex items-center justify-between gap-1 px-3 pt-3">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
           <span className={`h-2 w-2 rounded-full ${stage.dot}`} />
           {stage.label}
         </h3>
-        <span className="grid h-5 min-w-5 place-items-center rounded-full bg-white px-1.5 text-xs font-medium text-slate-500 shadow-sm">
-          {items.length}
-        </span>
+        <div className="flex items-center gap-1">
+          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-white px-1.5 text-xs font-medium text-slate-500 shadow-sm">
+            {items.length}
+          </span>
+          <button
+            onClick={onToggleCollapse}
+            title={`Recolher ${stage.label}`}
+            className="grid h-5 w-5 shrink-0 place-items-center rounded-md text-slate-400 transition-colors hover:bg-white hover:text-brand-600"
+          >
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" aria-hidden="true">
+              <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      <ul className="flex flex-col gap-2 p-3">
+      {/* flex-1: a lista (e o placeholder vazio) preenchem a altura da coluna,
+          então mesmo colunas vazias viram um alvo de drop alto e fácil de acertar. */}
+      <ul className="flex flex-1 flex-col gap-2 p-3">
         {items.length === 0 ? (
           <li
-            className={`grid min-h-[64px] place-items-center rounded-xl border border-dashed text-center text-[11px] transition-colors ${
-              isOver ? 'border-brand-400 text-brand-600' : 'border-slate-200 text-slate-400'
+            className={`grid min-h-[80px] flex-1 place-items-center rounded-xl border border-dashed text-center text-[11px] transition-colors ${
+              isOver ? 'border-brand-400 bg-brand-50 text-brand-600' : 'border-slate-200 text-slate-400'
             }`}
           >
-            {isOver ? 'Solte aqui' : 'arraste vagas para cá'}
+            {isOver ? '⤵ Solte aqui' : 'arraste vagas para cá'}
           </li>
         ) : (
           items.map((app, i) => (
