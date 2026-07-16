@@ -143,7 +143,7 @@ export default function Dashboard() {
         </div>
         {view === 'kanban' && (
           <span className="hidden text-xs text-slate-400 sm:inline">
-            Arraste os cards entre as colunas (funciona no celular: segure e arraste)
+            Arraste pela alça ⠿ para mover entre colunas (ou use o seletor de etapa no card)
           </span>
         )}
       </div>
@@ -243,8 +243,9 @@ function KanbanBoard({ applications, onMove, celebrateId }) {
   const sensors = useSensors(
     // Mouse: começa a arrastar após 6px (cliques continuam funcionando).
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    // Toque: segura ~180ms para arrastar (o scroll da página continua livre).
-    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+    // Toque: pequeno atraso antes de arrastar (evita drag acidental num toque).
+    // Como o arraste só parte da alça (touch-none), não briga com o scroll.
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
   )
   const lastDragAt = useRef(0)
   const [activeId, setActiveId] = useState(null)
@@ -438,21 +439,42 @@ function KanbanCard({ app, index, onMove, celebrating, lastDragAt }) {
   return (
     <li
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
       onClick={handleClick}
-      // Impede o long-press nativo do mobile (menu/seleção + vibração) de
-      // interromper o arraste — deixa o sensor de toque assumir o hold.
       onContextMenu={(e) => e.preventDefault()}
       style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
-      className={`animate-cardin relative cursor-grab touch-manipulation select-none [-webkit-touch-callout:none] rounded-xl border bg-white p-3 shadow-sm transition-all duration-150 ${
+      className={`animate-cardin relative flex cursor-pointer gap-1.5 select-none rounded-xl border bg-white p-3 shadow-sm transition-all duration-150 [-webkit-touch-callout:none] ${
         isDragging
           ? 'border-dashed border-slate-300 opacity-40'
           : 'border-slate-200 hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md'
       } ${celebrating ? 'animate-pop border-olive-400 ring-2 ring-olive-300' : ''}`}
     >
       {celebrating && <ConfettiBurst />}
-      <CardBody app={app} celebrating={celebrating} onMove={onMove} />
+
+      {/* Alça de arraste: só ELA arrasta. `touch-none` (touch-action: none)
+          desativa o scroll do navegador apenas aqui, então segurar-e-arrastar
+          na alça move o card de verdade no celular, enquanto tocar/rolar no
+          resto do card continua funcionando (scroll da lista + abrir a vaga). */}
+      <button
+        {...listeners}
+        {...attributes}
+        onClick={(e) => e.stopPropagation()}
+        aria-label="Arraste para mover de etapa"
+        title="Arraste para mover"
+        className="-ml-1 flex w-6 shrink-0 touch-none cursor-grab items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing"
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+          <circle cx="9" cy="5" r="1.5" />
+          <circle cx="15" cy="5" r="1.5" />
+          <circle cx="9" cy="12" r="1.5" />
+          <circle cx="15" cy="12" r="1.5" />
+          <circle cx="9" cy="19" r="1.5" />
+          <circle cx="15" cy="19" r="1.5" />
+        </svg>
+      </button>
+
+      <div className="min-w-0 flex-1">
+        <CardBody app={app} celebrating={celebrating} onMove={onMove} />
+      </div>
     </li>
   )
 }
