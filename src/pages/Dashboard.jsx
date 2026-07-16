@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   DndContext,
@@ -310,16 +311,23 @@ function KanbanBoard({ applications, onMove, celebrateId }) {
         </div>
       </div>
 
-      {/* h-full/w-full: o card flutuante preenche exatamente a medida que o
-          dnd-kit calcula do card original (largura real da coluna), então o
-          fantasma acompanha o cursor em vez de aparecer deslocado. */}
-      <DragOverlay dropAnimation={{ duration: 220, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' }}>
-        {activeApp ? (
-          <div className="h-full w-full rotate-1 cursor-grabbing rounded-xl border border-brand-400 bg-white p-3 shadow-2xl ring-2 ring-brand-200/60">
-            <CardBody app={activeApp} />
-          </div>
-        ) : null}
-      </DragOverlay>
+      {/* Portaled ao <body>: o overlay usa position:fixed, e qualquer ancestral
+          com transform (como o fade-in de entrada da página) faz esse fixed se
+          posicionar relativo AO ancestral, não à tela — era isso que empurrava
+          o card fantasma pra longe do cursor (~a distância da margem do layout
+          centralizado). No body, nada disso o afeta e ele cola no ponteiro.
+          h-full/w-full faz o card preencher a medida real da coluna que o
+          dnd-kit calcula. */}
+      {createPortal(
+        <DragOverlay dropAnimation={{ duration: 220, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' }}>
+          {activeApp ? (
+            <div className="h-full w-full rotate-1 cursor-grabbing rounded-xl border border-brand-400 bg-white p-3 shadow-2xl ring-2 ring-brand-200/60">
+              <CardBody app={activeApp} />
+            </div>
+          ) : null}
+        </DragOverlay>,
+        document.body,
+      )}
     </DndContext>
   )
 }
