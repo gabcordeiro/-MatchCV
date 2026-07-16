@@ -95,4 +95,60 @@
     animation: flicker 0.9s ease-in-out infinite;
     transform-origin: 50% 85%;
   }
+
+  /* Entrada dos cards do kanban (escalonada via animation-delay inline). */
+  @keyframes cardin {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .animate-cardin {
+    animation: cardin 0.3s ease-out both;
+  }
+
+  /* Toast de feedback (canto inferior). */
+  @keyframes toastin {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .animate-toastin {
+    animation: toastin 0.25s ease-out both;
+  }
+
+  /* Confete ao mover pra Oferta: cada partícula voa numa direção (via CSS vars). */
+  @keyframes confetti {
+    0% {
+      opacity: 1;
+      transform: translate(0, 0) rotate(0deg) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(var(--cx), var(--cy)) rotate(var(--cr)) scale(0.4);
+    }
+  }
+  .animate-confetti {
+    animation: confetti 0.9s cubic-bezier(0.2, 0.6, 0.4, 1) both;
+  }
+
+  /* Acessibilidade: quem pediu menos movimento, recebe menos movimento. */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-cardin,
+    .animate-toastin,
+    .animate-confetti,
+    .animate-pop,
+    .animate-flicker {
+      animation: none;
+    }
+  }
 }

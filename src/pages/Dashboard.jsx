@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   TouchSensor,
   useDraggable,
@@ -12,7 +13,6 @@ import {
 import { supabase } from '../lib/supabaseClient.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProfile } from '../context/ProfileContext.jsx'
-import Spinner from '../components/Spinner.jsx'
 
 const STATUS_LABELS = {
   draft: { label: 'Rascunho', className: 'bg-slate-100 text-slate-600' },
@@ -40,6 +40,8 @@ export default function Dashboard() {
   const [error, setError] = useState(null)
   const [view, setView] = useState(() => localStorage.getItem('matchcv:view') || 'kanban')
   const [celebrateId, setCelebrateId] = useState(null)
+  const [toast, setToast] = useState(null) // { message, undo? }
+  const toastTimer = useRef(null)
 
   useEffect(() => {
     let active = true
@@ -61,14 +63,23 @@ export default function Dashboard() {
     }
   }, [user])
 
+  useEffect(() => () => clearTimeout(toastTimer.current), [])
+
   function switchView(next) {
     setView(next)
     localStorage.setItem('matchcv:view', next)
   }
 
-  async function moveStage(id, stage) {
+  function showToast(next) {
+    clearTimeout(toastTimer.current)
+    setToast(next)
+    toastTimer.current = setTimeout(() => setToast(null), 4200)
+  }
+
+  async function moveStage(id, stage, { silent = false } = {}) {
     const current = applications.find((a) => a.id === id)
     if (!current || current.stage === stage) return
+    const previousStage = current.stage || 'saved'
     const prev = applications
     setApplications((apps) => apps.map((a) => (a.id === id ? { ...a, stage } : a)))
     if (stage === 'offer') {
@@ -79,6 +90,17 @@ export default function Dashboard() {
     if (err) {
       setApplications(prev)
       setError(err.message)
+      return
+    }
+    if (!silent) {
+      const stageInfo = STAGES.find((s) => s.id === stage)
+      showToast({
+        message: `${stageInfo?.emoji ?? ''} Movida para ${stageInfo?.label ?? stage}`,
+        undo: () => {
+          setToast(null)
+          moveStage(id, previousStage, { silent: true })
+        },
+      })
     }
   }
 
@@ -131,9 +153,7 @@ export default function Dashboard() {
 
       <div className="mt-4">
         {loading ? (
-          <div className="grid place-items-center py-16 text-brand-600">
-            <Spinner className="h-7 w-7" />
-          </div>
+          <KanbanSkeleton />
         ) : applications.length === 0 ? (
           <EmptyState />
         ) : view === 'kanban' ? (
@@ -144,12 +164,26 @@ export default function Dashboard() {
           />
         ) : (
           <ul className="grid gap-3">
-            {applications.map((app) => (
-              <ApplicationRow key={app.id} app={app} />
+            {applications.map((app, i) => (
+              <ApplicationRow key={app.id} app={app} index={i} />
             ))}
           </ul>
         )}
       </div>
+
+      {toast && (
+        <div className="animate-toastin fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-lg">
+          <span>{toast.message}</span>
+          {toast.undo && (
+            <button
+              onClick={toast.undo}
+              className="font-semibold text-brand-600 hover:text-brand-700"
+            >
+              Desfazer
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -200,7 +234,10 @@ function UsageBanner({ profile }) {
   )
 }
 
-/* ===== Kanban com drag-and-drop (mouse E toque no celular) ===== */
+/* ===== Kanban com drag-and-drop (mouse E toque no celular) =====
+   O card arrastado é renderizado num DragOverlay (portal): flutua acima de
+   tudo, sem ser cortado pelo overflow das colunas, e tem animação de "queda"
+   suave ao soltar. O card original vira um fantasma no lugar. */
 function KanbanBoard({ applications, onMove, celebrateId }) {
   const sensors = useSensors(
     // Mouse: começa a arrastar após 6px (cliques continuam funcionando).
@@ -209,16 +246,28 @@ function KanbanBoard({ applications, onMove, celebrateId }) {
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
   )
   const lastDragAt = useRef(0)
+  const [activeId, setActiveId] = useState(null)
+  const activeApp = applications.find((a) => a.id === activeId)
+
+  function handleDragStart(event) {
+    setActiveId(event.active?.id ?? null)
+  }
 
   function handleDragEnd(event) {
     lastDragAt.current = Date.now()
+    setActiveId(null)
     const stage = event.over?.id
     const id = event.active?.id
     if (stage && id) onMove(String(id), String(stage))
   }
 
   return (
-    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => setActiveId(null)}
+    >
       <div className="-mx-4 flex snap-x items-start gap-3 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0 lg:overflow-x-visible">
         {STAGES.map((stage) => (
           <KanbanColumn
@@ -228,23 +277,34 @@ function KanbanBoard({ applications, onMove, celebrateId }) {
             onMove={onMove}
             celebrateId={celebrateId}
             lastDragAt={lastDragAt}
+            dragging={!!activeId}
           />
         ))}
       </div>
+
+      <DragOverlay dropAnimation={{ duration: 220, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' }}>
+        {activeApp ? (
+          <div className="w-64 rotate-2 scale-105 cursor-grabbing rounded-xl border border-brand-400 bg-white p-3 shadow-2xl ring-2 ring-brand-200/60">
+            <CardBody app={activeApp} />
+          </div>
+        ) : null}
+      </DragOverlay>
     </DndContext>
   )
 }
 
-function KanbanColumn({ stage, items, onMove, celebrateId, lastDragAt }) {
+function KanbanColumn({ stage, items, onMove, celebrateId, lastDragAt, dragging }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id })
 
   return (
     <div
       ref={setNodeRef}
-      className={`flex w-64 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border transition-colors lg:w-auto lg:flex-1 lg:min-w-0 ${
+      className={`flex w-64 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border transition-all duration-200 lg:w-auto lg:flex-1 lg:min-w-0 ${
         isOver
           ? 'border-brand-400 bg-brand-50/80 ring-2 ring-brand-200'
-          : 'border-slate-200 bg-slate-100/60'
+          : dragging
+            ? 'border-dashed border-slate-300 bg-slate-100/60'
+            : 'border-slate-200 bg-slate-100/60'
       }`}
     >
       {/* faixa de cor da etapa (sensação de funil) */}
@@ -270,10 +330,11 @@ function KanbanColumn({ stage, items, onMove, celebrateId, lastDragAt }) {
             {isOver ? 'Solte aqui' : 'arraste vagas para cá'}
           </li>
         ) : (
-          items.map((app) => (
+          items.map((app, i) => (
             <KanbanCard
               key={app.id}
               app={app}
+              index={i}
               onMove={onMove}
               celebrating={celebrateId === app.id}
               lastDragAt={lastDragAt}
@@ -285,23 +346,11 @@ function KanbanColumn({ stage, items, onMove, celebrateId, lastDragAt }) {
   )
 }
 
-function KanbanCard({ app, onMove, celebrating, lastDragAt }) {
+function KanbanCard({ app, index, onMove, celebrating, lastDragAt }) {
   const navigate = useNavigate()
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: app.id,
   })
-
-  const title = app.company_name?.trim() || 'Vaga sem empresa'
-  const score = app.match_analysis?.match_score
-  const followUp = followUpBadge(app.follow_up_at)
-  const isStale =
-    !followUp &&
-    (app.stage || 'saved') === 'applied' &&
-    Date.now() - new Date(app.created_at).getTime() > STALE_DAYS * 24 * 60 * 60 * 1000
-
-  const style = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
-    : undefined
 
   function handleClick() {
     // Não navega logo após soltar um drag.
@@ -312,16 +361,34 @@ function KanbanCard({ app, onMove, celebrating, lastDragAt }) {
   return (
     <li
       ref={setNodeRef}
-      style={style}
       {...listeners}
       {...attributes}
       onClick={handleClick}
-      className={`cursor-grab touch-manipulation rounded-xl border bg-white p-3 shadow-sm transition-[box-shadow,border-color] ${
+      style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
+      className={`animate-cardin relative cursor-grab touch-manipulation rounded-xl border bg-white p-3 shadow-sm transition-all duration-150 ${
         isDragging
-          ? 'z-50 rotate-2 scale-105 cursor-grabbing border-brand-400 shadow-xl'
-          : 'border-slate-200 hover:border-brand-300'
+          ? 'border-dashed border-slate-300 opacity-40'
+          : 'border-slate-200 hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md'
       } ${celebrating ? 'animate-pop border-olive-400 ring-2 ring-olive-300' : ''}`}
     >
+      {celebrating && <ConfettiBurst />}
+      <CardBody app={app} celebrating={celebrating} onMove={onMove} />
+    </li>
+  )
+}
+
+/* Conteúdo do card, compartilhado entre o card na coluna e o DragOverlay. */
+function CardBody({ app, celebrating = false, onMove = null }) {
+  const title = app.company_name?.trim() || 'Vaga sem empresa'
+  const score = app.match_analysis?.match_score
+  const followUp = followUpBadge(app.follow_up_at)
+  const isStale =
+    !followUp &&
+    (app.stage || 'saved') === 'applied' &&
+    Date.now() - new Date(app.created_at).getTime() > STALE_DAYS * 24 * 60 * 60 * 1000
+
+  return (
+    <>
       <div className="flex items-start justify-between gap-2">
         <h4 className="truncate text-sm font-semibold text-slate-900">
           {celebrating && '🎉 '}
@@ -368,22 +435,92 @@ function KanbanCard({ app, onMove, celebrating, lastDragAt }) {
             </a>
           )}
         </span>
-        <select
-          value={app.stage || 'saved'}
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          onChange={(e) => onMove(app.id, e.target.value)}
-          title="Mover para outra etapa"
-          className="cursor-pointer rounded-md border-0 bg-transparent py-0.5 pl-1 pr-4 text-[11px] font-medium text-slate-500 hover:text-brand-600 focus:ring-1 focus:ring-brand-300"
-        >
-          {STAGES.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.emoji} {s.label}
-            </option>
-          ))}
-        </select>
+        {onMove ? (
+          <select
+            value={app.stage || 'saved'}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => onMove(app.id, e.target.value)}
+            title="Mover para outra etapa"
+            className="cursor-pointer rounded-md border-0 bg-transparent py-0.5 pl-1 pr-4 text-[11px] font-medium text-slate-500 hover:text-brand-600 focus:ring-1 focus:ring-brand-300"
+          >
+            {STAGES.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.emoji} {s.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-[11px] font-medium text-slate-400">
+            {STAGES.find((s) => s.id === (app.stage || 'saved'))?.label}
+          </span>
+        )}
       </div>
-    </li>
+    </>
+  )
+}
+
+/* Confete em CSS puro (12 partículas, sem lib): explode do centro do card. */
+const CONFETTI_COLORS = ['#CC6236', '#7C883C', '#E5A585', '#B9C381', '#F0C8B3', '#99A557']
+
+function ConfettiBurst() {
+  const pieces = Array.from({ length: 12 }, (_, i) => {
+    const angle = (i / 12) * Math.PI * 2
+    const dist = 42 + (i % 3) * 18
+    return {
+      x: `${Math.round(Math.cos(angle) * dist)}px`,
+      y: `${Math.round(Math.sin(angle) * dist - 24)}px`,
+      r: `${(i % 2 ? 1 : -1) * (180 + i * 30)}deg`,
+      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      delay: `${(i % 4) * 40}ms`,
+    }
+  })
+  return (
+    <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 overflow-visible">
+      {pieces.map((p, i) => (
+        <span
+          key={i}
+          className="animate-confetti absolute left-1/2 top-1/2 block h-2 w-1.5 rounded-[2px]"
+          style={{
+            backgroundColor: p.color,
+            animationDelay: p.delay,
+            '--cx': p.x,
+            '--cy': p.y,
+            '--cr': p.r,
+          }}
+        />
+      ))}
+    </span>
+  )
+}
+
+/* Skeleton do kanban: colunas fantasma em vez de spinner solto — a página
+   "chega montada", o que passa muito mais solidez que um spinner no vazio. */
+function KanbanSkeleton() {
+  return (
+    <div className="-mx-4 flex items-start gap-3 overflow-hidden px-4 pb-4 sm:mx-0 sm:px-0">
+      {STAGES.map((stage, col) => (
+        <div
+          key={stage.id}
+          className="flex w-64 shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-100/60 lg:w-auto lg:flex-1"
+        >
+          <div className={`h-1 w-full ${stage.tint} opacity-40`} />
+          <div className="flex items-center justify-between px-3 pt-3">
+            <span className="h-3 w-16 animate-pulse rounded bg-slate-200" />
+            <span className="h-5 w-5 animate-pulse rounded-full bg-slate-200" />
+          </div>
+          <div className="flex flex-col gap-2 p-3">
+            {Array.from({ length: col === 0 ? 3 : col % 2 ? 1 : 2 }).map((_, i) => (
+              <div key={i} className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="h-3.5 w-3/4 animate-pulse rounded bg-slate-100" />
+                <div className="mt-2 h-2.5 w-full animate-pulse rounded bg-slate-100" />
+                <div className="mt-3 h-2 w-1/3 animate-pulse rounded bg-slate-100" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -410,7 +547,7 @@ function followUpBadge(followUpAt) {
   return { label: `retorno em ${days} dias`, className: 'bg-slate-100 text-slate-500' }
 }
 
-function ApplicationRow({ app }) {
+function ApplicationRow({ app, index = 0 }) {
   const status = STATUS_LABELS[app.status] ?? STATUS_LABELS.draft
   const stageLabel = STAGES.find((s) => s.id === (app.stage || 'saved'))?.label
   const title = app.company_name?.trim() || 'Vaga sem empresa'
@@ -418,10 +555,10 @@ function ApplicationRow({ app }) {
   const score = app.match_analysis?.match_score
 
   return (
-    <li>
+    <li className="animate-cardin" style={{ animationDelay: `${Math.min(index, 8) * 35}ms` }}>
       <Link
         to={`/dashboard/app/${app.id}`}
-        className="card flex items-start justify-between gap-4 p-4 transition-colors hover:border-brand-300 sm:p-5"
+        className="card flex items-start justify-between gap-4 p-4 transition-all duration-150 hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md sm:p-5"
       >
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">

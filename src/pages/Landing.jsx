@@ -152,6 +152,17 @@ export default function Landing() {
               🇧🇷 Feito no Brasil, em português de verdade — não é tradução capenga de
               ferramenta gringa. Sua primeira análise sai em ~15 segundos.
             </p>
+            <ul className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-500">
+              <li className="flex items-center gap-1.5">
+                <ShieldIcon /> Pagamento seguro via <strong className="text-slate-700">Mercado Pago</strong> — Pix ou cartão
+              </li>
+              <li className="flex items-center gap-1.5">
+                <LockIcon /> Seu currículo é seu: dados protegidos e nunca compartilhados
+              </li>
+              <li className="flex items-center gap-1.5">
+                <CheckIcon /> Cancela em 2 cliques, sem ligação nem e-mail pro suporte
+              </li>
+            </ul>
           </div>
         </section>
       </main>
@@ -166,6 +177,34 @@ export default function Landing() {
         </div>
       </footer>
     </div>
+  )
+}
+
+/* Ícones minúsculos da faixa de confiança (inline pra não puxar lib de ícones). */
+function ShieldIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 text-olive-600" fill="none" aria-hidden="true">
+      <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M9.5 12l2 2 3.5-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function LockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 text-olive-600" fill="none" aria-hidden="true">
+      <rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 10V7a4 4 0 018 0v3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 text-olive-600" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8.5 12.5l2.5 2.5 4.5-5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   )
 }
 
