@@ -287,25 +287,35 @@ function KanbanBoard({ applications, onMove, celebrateId }) {
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveId(null)}
     >
-      <div className="-mx-4 flex min-h-[320px] snap-x items-stretch gap-3 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0 lg:overflow-x-visible">
-        {STAGES.map((stage) => (
-          <KanbanColumn
-            key={stage.id}
-            stage={stage}
-            items={applications.filter((a) => (a.stage || 'saved') === stage.id)}
-            onMove={onMove}
-            celebrateId={celebrateId}
-            lastDragAt={lastDragAt}
-            dragging={!!activeId}
-            collapsed={!!collapsed[stage.id]}
-            onToggleCollapse={() => toggleCollapse(stage.id)}
-          />
-        ))}
+      {/* Board: no desktop "quebra" o container central (max-w-5xl) e usa uma
+          largura maior — estilo Trello, colunas respiram em vez de espremidas.
+          O padding responsivo cria as margens laterais e capa o conteúdo em
+          ~1440px centralizado; overflow-x-auto garante scroll se estourar.
+          No mobile, segue o scroll horizontal por card (colunas w-64). */}
+      <div className="-mx-4 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0 lg:mx-[calc(50%-50vw)] lg:px-[max(1.5rem,calc(50vw-720px))]">
+        <div className="flex min-h-[320px] snap-x items-stretch gap-3">
+          {STAGES.map((stage) => (
+            <KanbanColumn
+              key={stage.id}
+              stage={stage}
+              items={applications.filter((a) => (a.stage || 'saved') === stage.id)}
+              onMove={onMove}
+              celebrateId={celebrateId}
+              lastDragAt={lastDragAt}
+              dragging={!!activeId}
+              collapsed={!!collapsed[stage.id]}
+              onToggleCollapse={() => toggleCollapse(stage.id)}
+            />
+          ))}
+        </div>
       </div>
 
+      {/* h-full/w-full: o card flutuante preenche exatamente a medida que o
+          dnd-kit calcula do card original (largura real da coluna), então o
+          fantasma acompanha o cursor em vez de aparecer deslocado. */}
       <DragOverlay dropAnimation={{ duration: 220, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' }}>
         {activeApp ? (
-          <div className="w-64 rotate-2 scale-105 cursor-grabbing rounded-xl border border-brand-400 bg-white p-3 shadow-2xl ring-2 ring-brand-200/60">
+          <div className="h-full w-full rotate-1 cursor-grabbing rounded-xl border border-brand-400 bg-white p-3 shadow-2xl ring-2 ring-brand-200/60">
             <CardBody app={activeApp} />
           </div>
         ) : null}
@@ -423,8 +433,11 @@ function KanbanCard({ app, index, onMove, celebrating, lastDragAt }) {
       {...listeners}
       {...attributes}
       onClick={handleClick}
+      // Impede o long-press nativo do mobile (menu/seleção + vibração) de
+      // interromper o arraste — deixa o sensor de toque assumir o hold.
+      onContextMenu={(e) => e.preventDefault()}
       style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
-      className={`animate-cardin relative cursor-grab touch-manipulation rounded-xl border bg-white p-3 shadow-sm transition-all duration-150 ${
+      className={`animate-cardin relative cursor-grab touch-manipulation select-none [-webkit-touch-callout:none] rounded-xl border bg-white p-3 shadow-sm transition-all duration-150 ${
         isDragging
           ? 'border-dashed border-slate-300 opacity-40'
           : 'border-slate-200 hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md'
