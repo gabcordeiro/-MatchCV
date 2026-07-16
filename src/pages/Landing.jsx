@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import Logo from '../components/Logo.jsx'
 
 export default function Landing() {
-  const { session } = useAuth()
+  const { session, loading } = useAuth()
+
+  // Já logado? A raiz do site leva direto pro app (não faz sentido mostrar a
+  // página de venda pra quem já é usuário). Espera a sessão carregar pra não
+  // decidir cedo demais no refresh; enquanto carrega, a landing aparece
+  // normalmente pra visitante anônimo (que é o caso comum).
+  if (!loading && session) return <Navigate to="/dashboard" replace />
+
   const primaryTo = session ? '/dashboard' : '/auth'
 
   return (
