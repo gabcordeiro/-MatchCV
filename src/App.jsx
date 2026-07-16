@@ -3,6 +3,9 @@ import RequireAuth from './components/RequireAuth.jsx'
 import AppLayout from './components/AppLayout.jsx'
 import Landing from './pages/Landing.jsx'
 import Auth from './pages/Auth.jsx'
+import Terms from './pages/Terms.jsx'
+import Privacy from './pages/Privacy.jsx'
+import Contact from './pages/Contact.jsx'
 import Onboarding from './pages/Onboarding.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import NewApplication from './pages/NewApplication.jsx'
@@ -17,6 +20,9 @@ export default function App() {
       {/* Public */}
       <Route path="/" element={<Landing />} />
       <Route path="/auth" element={<Auth />} />
+      <Route path="/termos" element={<Terms />} />
+      <Route path="/privacidade" element={<Privacy />} />
+      <Route path="/contato" element={<Contact />} />
 
       {/* Authenticated */}
       <Route element={<RequireAuth />}>

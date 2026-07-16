@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import Logo from '../components/Logo.jsx'
+import Footer from '../components/Footer.jsx'
 
 export default function Landing() {
   const { session, loading } = useAuth()
@@ -174,15 +175,7 @@ export default function Landing() {
         </section>
       </main>
 
-      <footer className="border-t border-slate-200 py-8">
-        <div className="mx-auto flex w-full max-w-5xl flex-col items-center justify-between gap-3 px-4 text-sm text-slate-500 sm:flex-row sm:px-6">
-          <Logo to="/" />
-          <span className="text-center">
-            Feito para quem cansou de mandar currículo no vazio. ©{' '}
-            {new Date().getFullYear()} MatchCV
-          </span>
-        </div>
-      </footer>
+      <Footer />
     </div>
   )
 }

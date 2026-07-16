@@ -2,6 +2,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useProfile } from '../context/ProfileContext.jsx'
 import { FullPageSpinner } from './Spinner.jsx'
 import Navbar from './Navbar.jsx'
+import Footer from './Footer.jsx'
 
 // Layout for the main app (post-onboarding). Redirects users who haven't
 // completed onboarding yet, so it only runs once on first access.
@@ -29,15 +30,16 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="flex min-h-screen flex-col bg-slate-50">
       <Navbar />
       {/* key por rota: cada página entra com um fade sutil */}
       <main
         key={location.pathname}
-        className="animate-fadein mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8"
+        className="animate-fadein mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-8"
       >
         <Outlet />
       </main>
+      <Footer />
     </div>
   )
 }
