@@ -17,15 +17,21 @@ export default function Footer() {
             © {year} {SITE.name} · {SITE.cityState}
           </span>
         </div>
-        <nav className="flex flex-wrap gap-x-5 gap-y-2">
+        <nav className="grid grid-cols-2 gap-x-6 gap-y-2 sm:flex sm:flex-wrap">
+          <Link to="/sobre" className="hover:text-slate-700">
+            Sobre
+          </Link>
+          <Link to="/faq" className="hover:text-slate-700">
+            Perguntas frequentes
+          </Link>
+          <Link to="/contato" className="hover:text-slate-700">
+            Contato
+          </Link>
           <Link to="/termos" className="hover:text-slate-700">
             Termos de Uso
           </Link>
           <Link to="/privacidade" className="hover:text-slate-700">
             Privacidade
-          </Link>
-          <Link to="/contato" className="hover:text-slate-700">
-            Contato
           </Link>
         </nav>
       </div>

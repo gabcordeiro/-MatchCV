@@ -116,6 +116,13 @@ export default function Upgrade() {
       <p className="mt-6 text-center text-xs text-slate-400">
         Pagamento processado com segurança pelo Mercado Pago. Assinatura cancela quando quiser.
       </p>
+      <p className="mt-2 text-center text-xs text-slate-400">
+        Dúvidas sobre cobrança, Pix ou cancelamento?{' '}
+        <Link to="/faq" className="font-medium text-brand-600 hover:text-brand-700">
+          Veja as perguntas frequentes
+        </Link>
+        .
+      </p>
     </div>
   )
 }

@@ -6,6 +6,8 @@ import Auth from './pages/Auth.jsx'
 import Terms from './pages/Terms.jsx'
 import Privacy from './pages/Privacy.jsx'
 import Contact from './pages/Contact.jsx'
+import About from './pages/About.jsx'
+import FAQ from './pages/FAQ.jsx'
 import Onboarding from './pages/Onboarding.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import NewApplication from './pages/NewApplication.jsx'
@@ -23,6 +25,8 @@ export default function App() {
       <Route path="/termos" element={<Terms />} />
       <Route path="/privacidade" element={<Privacy />} />
       <Route path="/contato" element={<Contact />} />
+      <Route path="/sobre" element={<About />} />
+      <Route path="/faq" element={<FAQ />} />
 
       {/* Authenticated */}
       <Route element={<RequireAuth />}>
