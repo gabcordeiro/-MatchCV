@@ -10,6 +10,10 @@
 //      https://<PROJECT_REF>.supabase.co/functions/v1/mercadopago-webhook
 //      com os eventos "Pagamentos" e "Assinaturas".
 //
+// Recibo por e-mail (opcional): se os secrets RESEND_API_KEY e RESEND_FROM
+// existirem, o pagamento confirmado dispara um e-mail de confirmação. Sem eles,
+// nada muda — o envio é simplesmente pulado.
+//
 // Idempotência: cada notificação tem um `id` próprio (distinto do `data.id` do
 // recurso). Guardamos em `payment_webhook_events` e ignoramos duplicata/retry
 // ANTES de aplicar qualquer efeito.
@@ -62,6 +66,55 @@ async function mpGet(path: string, token: string) {
   return res.json()
 }
 
+// Envia o recibo por e-mail via Resend. No-op se os secrets não existirem ou
+// se não houver e-mail do usuário. Nunca lança — falha de e-mail não pode
+// derrubar o processamento do pagamento.
+async function sendReceipt(
+  email: string | null | undefined,
+  opts: { kind: 'credits' | 'subscription'; amountCents: number | null; credits: number },
+) {
+  try {
+    const apiKey = Deno.env.get('RESEND_API_KEY')
+    const from = Deno.env.get('RESEND_FROM')
+    const appUrl = Deno.env.get('APP_URL') || 'https://match-cv-nine.vercel.app'
+    if (!apiKey || !from || !email) return
+
+    const amount =
+      typeof opts.amountCents === 'number'
+        ? (opts.amountCents / 100).toFixed(2).replace('.', ',')
+        : null
+
+    const isCredits = opts.kind === 'credits'
+    const subject = isCredits
+      ? 'Pagamento confirmado no MatchCV 🎉'
+      : 'Bem-vindo ao MatchCV Pro ⚡'
+    const lead = isCredits
+      ? `Recebemos seu pagamento${amount ? ` de R$ ${amount}` : ''} e liberamos ${opts.credits} ${
+          opts.credits === 1 ? 'crédito' : 'créditos'
+        } na sua conta.`
+      : `Sua assinatura Pro${amount ? ` de R$ ${amount}/mês` : ''} está ativa. Agora é análise ilimitada e preparação de entrevista liberadas.`
+
+    const html = `<!doctype html><html><body style="margin:0;background:#FAF7F2;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#241F1A">
+      <div style="max-width:520px;margin:0 auto;padding:32px 24px">
+        <div style="font-size:22px;font-weight:700">Match<span style="color:#B84E24">CV</span></div>
+        <div style="height:4px;width:48px;background:#B84E24;border-radius:9px;margin:16px 0 24px"></div>
+        <h1 style="font-size:22px;margin:0 0 12px">Pagamento confirmado 🎉</h1>
+        <p style="font-size:15px;line-height:1.6;color:#50463A;margin:0 0 20px">${lead}</p>
+        <a href="${appUrl}/dashboard" style="display:inline-block;background:#B84E24;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:999px">Ir para o meu painel</a>
+        <p style="font-size:13px;line-height:1.6;color:#867A66;margin:28px 0 0">Este é um recibo automático do MatchCV. Guarde-o para seus registros. Precisa de ajuda? É só responder este e-mail.</p>
+      </div>
+    </body></html>`
+
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ from, to: email, subject, html }),
+    })
+  } catch (err) {
+    console.error('sendReceipt failed (ignorado)', err)
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405)
 
@@ -105,7 +158,7 @@ Deno.serve(async (req) => {
 
       const { data: payment } = await admin
         .from('payments')
-        .select('id, user_id, kind, credits, status')
+        .select('id, user_id, kind, credits, amount_cents, status')
         .eq('id', paymentId)
         .maybeSingle()
       if (!payment || payment.status === 'paid') return json({ received: true })
@@ -119,13 +172,18 @@ Deno.serve(async (req) => {
         if (payment.kind === 'credits') {
           const { data: target } = await admin
             .from('profiles')
-            .select('credits')
+            .select('credits, email')
             .eq('id', payment.user_id)
             .maybeSingle()
           await admin
             .from('profiles')
             .update({ credits: (target?.credits ?? 0) + payment.credits })
             .eq('id', payment.user_id)
+          await sendReceipt(target?.email, {
+            kind: 'credits',
+            amountCents: payment.amount_cents,
+            credits: payment.credits,
+          })
         }
       } else if (['rejected', 'cancelled'].includes(mpPayment.status)) {
         await admin.from('payments').update({ status: 'failed' }).eq('id', payment.id)
@@ -137,7 +195,7 @@ Deno.serve(async (req) => {
       if (preapproval.status === 'authorized') {
         const { data: payment } = await admin
           .from('payments')
-          .select('id, user_id, status')
+          .select('id, user_id, amount_cents, status')
           .eq('id', paymentId)
           .maybeSingle()
         if (payment && payment.status !== 'paid') {
@@ -145,10 +203,17 @@ Deno.serve(async (req) => {
             .from('payments')
             .update({ status: 'paid', paid_at: new Date().toISOString(), provider_payment_id: String(dataId) })
             .eq('id', payment.id)
-          await admin
+          const { data: target } = await admin
             .from('profiles')
             .update({ plan: 'pro', mercadopago_subscription_id: String(dataId) })
             .eq('id', payment.user_id)
+            .select('email')
+            .maybeSingle()
+          await sendReceipt(target?.email, {
+            kind: 'subscription',
+            amountCents: payment.amount_cents,
+            credits: 0,
+          })
         }
       } else if (['cancelled', 'paused'].includes(preapproval.status)) {
         await admin

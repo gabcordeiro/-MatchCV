@@ -179,6 +179,15 @@ Quando quiser ativar:
    eventos de **Pagamentos** e **Assinaturas**. Copie a **Assinatura secreta**
    gerada e salve como secret `MP_WEBHOOK_SECRET`.
 
+**Recibo por e-mail (opcional):** o webhook envia um e-mail de confirmação após o
+pagamento se dois secrets existirem — senão, o envio é apenas pulado:
+   - `RESEND_API_KEY` — chave de [resend.com](https://resend.com) (free tier).
+   - `RESEND_FROM` — remetente, ex.: `MatchCV <no-reply@seudominio.com>`.
+   > Para enviar a qualquer cliente, o remetente precisa de um **domínio próprio
+   > verificado** no Resend. Sem domínio, o Resend só entrega para o e-mail da
+   > própria conta (bom pra testar). Por isso deixamos como opcional — ative
+   > quando tiver o domínio do passo 1 da semana 3.
+
 Fluxo (créditos): "Comprar no Pix" → `create-checkout` cria uma linha `pending` em
 `payments` e uma Preferência do Checkout Pro (cartão ou Pix) → usuário paga →
 `mercadopago-webhook` confirma o pagamento (`GET /v1/payments/:id`), marca a linha
