@@ -41,6 +41,24 @@ export default function NewApplication() {
     }
   }, [user])
 
+  // Pré-preenche a vaga que o usuário colou no score da landing (continuidade
+  // pós-cadastro) e consome o rascunho — usado uma vez só.
+  const [fromInstant, setFromInstant] = useState(false)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('matchcv:instant')
+      if (!raw) return
+      const s = JSON.parse(raw)
+      if (s?.job && Date.now() - (s.at || 0) < 24 * 60 * 60 * 1000) {
+        setJobDescription((cur) => cur || s.job)
+        setFromInstant(true)
+      }
+      localStorage.removeItem('matchcv:instant')
+    } catch {
+      /* ignora */
+    }
+  }, [])
+
   const busy = status !== ''
   const hasResume = resumes.length > 0 || Boolean(profile?.base_resume)
 
@@ -113,6 +131,13 @@ export default function NewApplication() {
         Cole a descrição da vaga. A IA vai gerar a carta de apresentação e a análise de
         compatibilidade com o seu currículo.
       </p>
+
+      {fromInstant && (
+        <p className="animate-cardin mt-4 rounded-xl border border-olive-200 bg-olive-50 px-4 py-3 text-sm text-olive-800">
+          ✓ Preenchemos a vaga com o texto que você testou na home. Confira e gere a análise
+          completa.
+        </p>
+      )}
 
       {!hasResume && (
         <div className="mt-5 flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">

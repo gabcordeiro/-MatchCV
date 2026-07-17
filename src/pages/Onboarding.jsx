@@ -29,6 +29,22 @@ export default function Onboarding() {
     if (profile?.base_resume) setResume(profile.base_resume)
   }, [profile?.base_resume])
 
+  // Pré-preenche com o currículo que o usuário colou no score da landing
+  // (continuidade pós-cadastro). Ignora se já tem base_resume ou se é antigo.
+  useEffect(() => {
+    if (profile?.base_resume) return
+    try {
+      const raw = localStorage.getItem('matchcv:instant')
+      if (!raw) return
+      const s = JSON.parse(raw)
+      if (s?.resume && Date.now() - (s.at || 0) < 24 * 60 * 60 * 1000) {
+        setResume((cur) => cur || s.resume)
+      }
+    } catch {
+      /* ignora */
+    }
+  }, [profile?.base_resume])
+
   if (loading) return <FullPageSpinner />
 
   async function handleSave() {

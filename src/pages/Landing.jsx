@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { instantScore } from '../lib/instantScore.js'
 import Logo from '../components/Logo.jsx'
 import Footer from '../components/Footer.jsx'
 
@@ -52,7 +53,7 @@ export default function Landing() {
               </div>
             </div>
 
-            <LiveDemo />
+            <InstantScore />
           </div>
         </section>
 
@@ -208,106 +209,145 @@ function CheckIcon() {
   )
 }
 
-/* Demo funcional do hero: keywords da vaga "acendendo" contra o currículo,
-   com o score subindo em tempo real — o produto de verdade, não ilustração. */
-const DEMO_TERMS = [
-  { term: 'SQL', found: true },
-  { term: 'Power BI', found: true },
-  { term: 'Dashboards', found: true },
-  { term: 'ETL', found: false },
-  { term: 'Inglês avançado', found: false },
-]
+/* Ferramenta REAL no hero: cola vaga + currículo → score na hora, sem login.
+   Vence o concorrente na fricção zero e funila pro cadastro (onde sai a análise
+   completa com IA). O cálculo é local (instantScore) — sem custo, sem abuso. */
+const EXAMPLE_JOB =
+  'Analista de Dados Pleno. Requisitos: SQL avançado, Power BI, construção de dashboards, modelagem de dados, ETL, inglês intermediário. Diferenciais: Python e experiência com métricas de produto.'
+const EXAMPLE_RESUME =
+  'Analista de dados com 4 anos de experiência. Domínio de SQL e Power BI, criação de dashboards gerenciais e relatórios. Experiência com modelagem de dados e métricas de produto. Excel avançado.'
 
-function LiveDemo() {
-  const [revealed, setRevealed] = useState(0)
-  const [score, setScore] = useState(0)
+function InstantScore() {
+  const [job, setJob] = useState(EXAMPLE_JOB)
+  const [resume, setResume] = useState(EXAMPLE_RESUME)
+  const [result, setResult] = useState(null)
+  const [display, setDisplay] = useState(0)
+  const [error, setError] = useState(null)
 
-  // Revela um termo por vez.
+  function handleCalc() {
+    setError(null)
+    const r = instantScore(job, resume)
+    if (!r.ok) {
+      setResult(null)
+      setError(r.reason)
+      return
+    }
+    setResult(r)
+  }
+
+  // Anima o número subindo até o score (game feel).
   useEffect(() => {
-    if (revealed >= DEMO_TERMS.length) return
-    const t = setTimeout(() => setRevealed((r) => r + 1), 700)
-    return () => clearTimeout(t)
-  }, [revealed])
+    if (!result) return
+    setDisplay(0)
+    let raf
+    const start = performance.now()
+    const dur = 800
+    const tick = (t) => {
+      const p = Math.min(1, (t - start) / dur)
+      setDisplay(Math.round(result.score * (1 - Math.pow(1 - p, 3))))
+      if (p < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [result])
 
-  // Score persegue o alvo conforme os termos aparecem.
-  useEffect(() => {
-    const foundSoFar = DEMO_TERMS.slice(0, revealed).filter((d) => d.found).length
-    const target = Math.round((foundSoFar / DEMO_TERMS.length) * 100)
-    if (score === target) return
-    const t = setTimeout(() => setScore((s) => (s < target ? s + 1 : s - 1)), 25)
-    return () => clearTimeout(t)
-  }, [revealed, score])
-
-  const missingShown = DEMO_TERMS.slice(0, revealed).filter((d) => !d.found).length
-  const done = revealed >= DEMO_TERMS.length
+  // Guarda o texto pra pré-preencher a conta após o cadastro (menos atrito).
+  function stashAndGo() {
+    try {
+      localStorage.setItem('matchcv:instant', JSON.stringify({ job, resume, at: Date.now() }))
+    } catch {
+      /* ignora */
+    }
+  }
 
   return (
-    <div aria-hidden="true" className="card p-5 sm:p-6">
-      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">Analisando contra</p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-900">
-            Analista de Dados Pleno · Vaga real
-          </p>
-        </div>
-        <span className="font-display text-3xl font-semibold text-slate-900">
-          {score}
-          <span className="text-base font-normal text-slate-400">%</span>
-        </span>
+    <div className="card p-5 sm:p-6">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-slate-900">Teste agora, sem cadastro</p>
+        {result && (
+          <span className="font-display text-3xl font-semibold text-slate-900">
+            {display}
+            <span className="text-base font-normal text-slate-400">%</span>
+          </span>
+        )}
       </div>
 
-      <div className="mt-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-          Termos que a vaga pede
-        </p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {DEMO_TERMS.map((d, i) => {
-            const shown = i < revealed
-            if (!shown) {
-              return (
+      <div className="mt-3 grid gap-2">
+        <textarea
+          value={job}
+          onChange={(e) => setJob(e.target.value)}
+          rows={3}
+          className="input resize-none text-xs leading-relaxed"
+          placeholder="Cole os requisitos da vaga aqui"
+          aria-label="Requisitos da vaga"
+        />
+        <textarea
+          value={resume}
+          onChange={(e) => setResume(e.target.value)}
+          rows={3}
+          className="input resize-none text-xs leading-relaxed"
+          placeholder="Cole suas experiências / currículo aqui"
+          aria-label="Seu currículo"
+        />
+      </div>
+
+      {error && <p className="mt-2 text-xs text-amber-600">{error}</p>}
+
+      <button onClick={handleCalc} className="btn-primary mt-3 w-full">
+        Calcular meu score grátis
+      </button>
+
+      {result ? (
+        <div className="animate-cardin mt-4">
+          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full rounded-full bg-brand-600 transition-all duration-500"
+              style={{ width: `${display}%` }}
+            />
+          </div>
+
+          {(result.present.length > 0 || result.missing.length > 0) && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {result.present.slice(0, 6).map((t) => (
                 <span
-                  key={d.term}
-                  className="h-6 w-16 animate-pulse rounded-full bg-slate-100"
-                />
-              )
-            }
-            return d.found ? (
-              <span
-                key={d.term}
-                className="rounded-full border border-olive-200 bg-olive-50 px-2.5 py-1 text-xs font-medium text-olive-700"
-              >
-                ✓ {d.term}
-              </span>
-            ) : (
-              <span
-                key={d.term}
-                className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700"
-              >
-                + {d.term}
-              </span>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="mt-4">
-        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-full rounded-full bg-brand-600 transition-all duration-200"
-            style={{ width: `${score}%` }}
-          />
-        </div>
-        <p className="mt-3 text-sm text-slate-600">
-          {done ? (
-            <>
-              <span className="font-semibold text-slate-900">{score}% de match.</span>{' '}
-              {missingShown} termos faltando no currículo — e a carta já está pronta.
-            </>
-          ) : (
-            'Comparando currículo e vaga…'
+                  key={`p-${t}`}
+                  className="rounded-full border border-olive-200 bg-olive-50 px-2 py-0.5 text-[11px] font-medium text-olive-700"
+                >
+                  ✓ {t}
+                </span>
+              ))}
+              {result.missing.slice(0, 5).map((t) => (
+                <span
+                  key={`m-${t}`}
+                  className="rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700"
+                >
+                  + {t}
+                </span>
+              ))}
+            </div>
           )}
+
+          <div className="mt-4 rounded-xl bg-slate-900 p-4 text-center">
+            <p className="text-sm font-medium text-white">Isso é só a prévia por palavras-chave.</p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-300">
+              Crie sua conta grátis e receba a <strong className="text-white">carta pronta</strong>,
+              a lista exata do que falta e as{' '}
+              <strong className="text-white">perguntas da entrevista</strong>.
+            </p>
+            <Link
+              to="/auth"
+              onClick={stashAndGo}
+              className="btn-primary mt-3 inline-flex w-full justify-center"
+            >
+              Ver minha análise completa grátis
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-2 text-center text-[11px] text-slate-400">
+          Prévia por palavras-chave. A análise completa com IA é feita após o cadastro.
         </p>
-      </div>
+      )}
     </div>
   )
 }
