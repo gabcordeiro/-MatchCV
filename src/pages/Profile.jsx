@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient.js'
 import { extractPdfText } from '../lib/pdf.js'
+import { optimizeLinkedin } from '../lib/api.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProfile } from '../context/ProfileContext.jsx'
 import AvatarUpload from '../components/AvatarUpload.jsx'
@@ -78,6 +79,9 @@ export default function Profile() {
       {/* Pagamento e assinatura (cartões ficam no Mercado Pago, nunca aqui) */}
       <BillingSection profile={profile} />
 
+      {/* Otimizador de LinkedIn (recurso Pro — upsell para free) */}
+      <LinkedinOptimizer isPro={profile?.plan === 'pro'} />
+
       {/* Evolução do score (gamificação sutil, sem gráfico decorativo) */}
       {scored.length >= 2 && <ScoreEvolution scored={scored} />}
 
@@ -147,7 +151,262 @@ function BillingSection({ profile }) {
           )}
         </div>
       </div>
+      <PaymentHistory />
     </div>
+  )
+}
+
+/* ===== Histórico de pagamentos (o dono lê os próprios via RLS) ===== */
+const PAYMENT_STATUS = {
+  paid: { label: 'Pago', className: 'bg-olive-100 text-olive-700' },
+  pending: { label: 'Pendente', className: 'bg-amber-100 text-amber-800' },
+  failed: { label: 'Falhou', className: 'bg-red-50 text-red-700' },
+  expired: { label: 'Expirado', className: 'bg-slate-100 text-slate-500' },
+  refunded: { label: 'Reembolsado', className: 'bg-slate-100 text-slate-500' },
+}
+
+function PaymentHistory() {
+  const [payments, setPayments] = useState(null) // null = carregando
+
+  useEffect(() => {
+    let active = true
+    supabase
+      .from('payments')
+      .select('id, kind, status, amount_cents, credits, created_at, paid_at')
+      .order('created_at', { ascending: false })
+      .limit(10)
+      .then(({ data }) => {
+        if (active) setPayments(data ?? [])
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  if (!payments || payments.length === 0) return null
+
+  return (
+    <div className="mt-5 border-t border-slate-100 pt-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Histórico de pagamentos
+      </h3>
+      <ul className="mt-2 divide-y divide-slate-100">
+        {payments.map((p) => {
+          const st = PAYMENT_STATUS[p.status] ?? PAYMENT_STATUS.pending
+          const amount =
+            typeof p.amount_cents === 'number'
+              ? `R$ ${(p.amount_cents / 100).toFixed(2).replace('.', ',')}`
+              : '—'
+          return (
+            <li key={p.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+              <span className="min-w-0 truncate text-slate-700">
+                {p.kind === 'credits' ? `Pacote de ${p.credits} análises` : 'Assinatura Pro'}
+              </span>
+              <span className="flex shrink-0 items-center gap-2.5">
+                <span className="font-medium text-slate-900">{amount}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${st.className}`}>
+                  {st.label}
+                </span>
+                <span className="hidden text-xs text-slate-400 sm:inline">
+                  {new Date(p.paid_at || p.created_at).toLocaleDateString('pt-BR')}
+                </span>
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+/* ===== Otimizador de LinkedIn (recurso Pro; upsell pra quem é free) ===== */
+function LinkedinOptimizer({ isPro }) {
+  const [headline, setHeadline] = useState('')
+  const [about, setAbout] = useState('')
+  const [targetRole, setTargetRole] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const [result, setResult] = useState(null)
+  const [copiedKey, setCopiedKey] = useState('')
+
+  async function handleOptimize(e) {
+    e.preventDefault()
+    setError(null)
+    setBusy(true)
+    const { data, error: err } = await optimizeLinkedin({ headline, about, targetRole })
+    setBusy(false)
+    if (err) {
+      setError(err)
+      return
+    }
+    setResult(data)
+  }
+
+  async function copy(text, key) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedKey(key)
+      setTimeout(() => setCopiedKey(''), 1500)
+    } catch {
+      /* ignora */
+    }
+  }
+
+  return (
+    <div className="card mt-6 p-6 sm:p-8">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-semibold text-slate-900">
+            <LinkedinIcon /> Turbine seu LinkedIn
+            {!isPro && (
+              <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-brand-700">
+                Pro
+              </span>
+            )}
+          </h2>
+          <p className="mt-1 max-w-lg text-sm text-slate-500">
+            Recrutadores buscam por palavras-chave também no LinkedIn. Cole seu headline e sua
+            seção "Sobre", diga o cargo que você quer, e a IA reescreve os dois otimizados — sem
+            inventar nada que não esteja no seu perfil.
+          </p>
+        </div>
+      </div>
+
+      {!isPro ? (
+        <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
+          <p className="text-sm text-slate-600">
+            🔒 Exclusivo do plano Pro — junto com análises ilimitadas e a preparação de
+            entrevista, por R$ 19,90/mês.
+          </p>
+          <Link to="/dashboard/upgrade" className="btn-primary mt-3 inline-flex">
+            Desbloquear com o Pro
+          </Link>
+        </div>
+      ) : (
+        <>
+          <form onSubmit={handleOptimize} className="mt-4 grid gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="li-role" className="label">
+                  Cargo-alvo
+                </label>
+                <input
+                  id="li-role"
+                  required
+                  value={targetRole}
+                  onChange={(e) => setTargetRole(e.target.value)}
+                  className="input"
+                  placeholder="Ex.: Analista de Dados Pleno"
+                  maxLength={200}
+                />
+              </div>
+              <div>
+                <label htmlFor="li-headline" className="label">
+                  Headline atual (opcional)
+                </label>
+                <input
+                  id="li-headline"
+                  value={headline}
+                  onChange={(e) => setHeadline(e.target.value)}
+                  className="input"
+                  placeholder="O título abaixo do seu nome no LinkedIn"
+                  maxLength={300}
+                />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="li-about" className="label">
+                Seção "Sobre" atual
+              </label>
+              <textarea
+                id="li-about"
+                value={about}
+                onChange={(e) => setAbout(e.target.value)}
+                rows={5}
+                className="input resize-y text-sm leading-relaxed"
+                placeholder="Cole aqui o texto da sua seção Sobre do LinkedIn…"
+                maxLength={4000}
+              />
+            </div>
+            {error && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+            )}
+            <button type="submit" disabled={busy} className="btn-primary justify-self-start">
+              {busy ? <Spinner label="Otimizando..." /> : 'Otimizar meu perfil'}
+            </button>
+          </form>
+
+          {result && (
+            <div className="mt-6 grid gap-5 border-t border-slate-100 pt-5">
+              {result.headlines?.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    3 opções de headline — escolha a sua
+                  </h3>
+                  <ul className="mt-2 grid gap-2">
+                    {result.headlines.map((h, i) => (
+                      <li
+                        key={i}
+                        className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700"
+                      >
+                        <span>{h}</span>
+                        <button
+                          onClick={() => copy(h, `h${i}`)}
+                          className="btn-ghost shrink-0 px-2 py-1 text-xs"
+                        >
+                          {copiedKey === `h${i}` ? '✓' : 'Copiar'}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {result.about && (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-900">Nova seção "Sobre"</h3>
+                    <button
+                      onClick={() => copy(result.about, 'about')}
+                      className="btn-ghost px-2 py-1 text-xs"
+                    >
+                      {copiedKey === 'about' ? '✓ Copiado' : 'Copiar'}
+                    </button>
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-sm leading-relaxed text-slate-700">
+                    {result.about}
+                  </p>
+                </div>
+              )}
+              {result.skills_to_add?.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Competências pra adicionar
+                  </h3>
+                  <ul className="mt-2 flex flex-wrap gap-1.5">
+                    {result.skills_to_add.map((s, i) => (
+                      <li
+                        key={`${s}-${i}`}
+                        className="rounded-full border border-olive-200 bg-olive-50 px-2.5 py-1 text-xs font-medium text-olive-700"
+                      >
+                        + {s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function LinkedinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5 text-[#0A66C2]" fill="currentColor" aria-hidden="true">
+      <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 110-4.12 2.06 2.06 0 010 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.55C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.72C24 .77 23.2 0 22.22 0z" />
+    </svg>
   )
 }
 

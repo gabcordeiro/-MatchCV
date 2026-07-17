@@ -136,8 +136,14 @@ O botão "Continuar com Google" já está na tela de login. Para habilitar:
 3. Em **Authentication → URL Configuration**: confira se a *Site URL* é a URL do app
    no Vercel (senão o redirect volta pro lugar errado).
 
-Enquanto não habilitar, o botão mostra um aviso amigável. O Facebook está como
-placeholder ("em breve") — mesmo processo quando quiser ativar.
+Enquanto não habilitar, o botão mostra um aviso amigável.
+
+**Login com LinkedIn** (mesmo padrão): crie um app em
+[developer.linkedin.com](https://developer.linkedin.com) com o produto
+**"Sign In with LinkedIn using OpenID Connect"**, adicione o redirect
+`https://SEU_PROJECT_REF.supabase.co/auth/v1/callback`, e cole Client ID/Secret
+no Supabase em **Authentication → Providers → LinkedIn (OIDC)**. Faz muito
+sentido aqui: o público-alvo inteiro tem conta no LinkedIn.
 
 > Usuários que entram pelo Google caem no fluxo normal: o trigger cria o profile
 > (com email) e o onboarding aparece no primeiro acesso.

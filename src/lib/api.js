@@ -60,3 +60,24 @@ export async function createCheckout(product = 'pro') {
 
   return { data }
 }
+
+// Otimiza headline + "Sobre" do LinkedIn para um cargo-alvo (recurso Pro).
+// Retorna { data: { headlines, about, skills_to_add } } ou { error, code }.
+export async function optimizeLinkedin({ headline, about, targetRole }) {
+  const { data, error } = await supabase.functions.invoke('optimize-linkedin', {
+    body: { headline, about, target_role: targetRole },
+  })
+  if (error) {
+    let message = error.message || 'Falha ao otimizar o perfil.'
+    let code = null
+    try {
+      const body = await error.context?.json?.()
+      if (body?.error) message = body.error
+      if (body?.code) code = body.code
+    } catch {
+      /* mantém a mensagem padrão */
+    }
+    return { error: message, code }
+  }
+  return { data }
+}

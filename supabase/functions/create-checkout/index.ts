@@ -96,48 +96,77 @@ Deno.serve(async (req) => {
       .single()
     if (paymentError || !payment) throw new Error('Não foi possível iniciar a cobrança.')
 
+    // Se a chamada ao Mercado Pago falhar, apaga a linha pending órfã do ledger
+    // e devolve o erro real do MP (ajuda a diagnosticar; ex.: preapproval em
+    // modo teste exige payer_email de usuário de teste).
+    async function failCleanly(err: unknown) {
+      await admin.from('payments').delete().eq('id', payment.id)
+      const detail = err instanceof Error ? err.message : ''
+      console.error('Mercado Pago falhou:', detail)
+      return json(
+        {
+          error: detail
+            ? `O Mercado Pago recusou a operação: ${detail}`
+            : 'Não foi possível iniciar o pagamento. Tente novamente.',
+        },
+        502,
+      )
+    }
+
     const notificationUrl = `${supabaseUrl}/functions/v1/mercadopago-webhook`
 
     if (isCredits) {
-      const preference = await mpPost('/checkout/preferences', accessToken, {
-        items: [
-          {
-            title: `Pacote de ${CREDITS_QTY} análises — MatchCV`,
-            quantity: 1,
-            unit_price: CREDITS_AMOUNT,
-            currency_id: 'BRL',
+      let preference
+      try {
+        preference = await mpPost('/checkout/preferences', accessToken, {
+          items: [
+            {
+              title: `Pacote de ${CREDITS_QTY} análises — MatchCV`,
+              quantity: 1,
+              unit_price: CREDITS_AMOUNT,
+              currency_id: 'BRL',
+            },
+          ],
+          payer: { email: user.email },
+          external_reference: payment.id,
+          back_urls: {
+            success: `${appUrl}/dashboard?checkout=success`,
+            failure: `${appUrl}/dashboard/upgrade?checkout=cancelled`,
+            pending: `${appUrl}/dashboard?checkout=pending`,
           },
-        ],
-        payer: { email: user.email },
-        external_reference: payment.id,
-        back_urls: {
-          success: `${appUrl}/dashboard?checkout=success`,
-          failure: `${appUrl}/dashboard/upgrade?checkout=cancelled`,
-          pending: `${appUrl}/dashboard?checkout=pending`,
-        },
-        auto_return: 'approved',
-        notification_url: notificationUrl,
-      })
+          auto_return: 'approved',
+          notification_url: notificationUrl,
+        })
+      } catch (err) {
+        return await failCleanly(err)
+      }
       await admin.from('payments').update({ provider_reference: preference.id }).eq('id', payment.id)
       return json({ url: preference.init_point })
     }
 
     // Assinatura: Preapproval sem plano associado e sem cartão pré-tokenizado — o
     // usuário completa a autorização na página hospedada do Mercado Pago.
-    const preapproval = await mpPost('/preapproval', accessToken, {
-      reason: 'MatchCV Pro — assinatura mensal',
-      external_reference: payment.id,
-      payer_email: user.email,
-      auto_recurring: {
-        frequency: 1,
-        frequency_type: 'months',
-        transaction_amount: PRO_AMOUNT,
-        currency_id: 'BRL',
-      },
-      back_url: `${appUrl}/dashboard?checkout=success`,
-      notification_url: notificationUrl,
-      status: 'pending',
-    })
+    // Atenção (modo teste): o MP exige que payer_email seja de um usuário de
+    // teste; com credenciais de produção, o e-mail real do usuário funciona.
+    let preapproval
+    try {
+      preapproval = await mpPost('/preapproval', accessToken, {
+        reason: 'MatchCV Pro — assinatura mensal',
+        external_reference: payment.id,
+        payer_email: user.email,
+        auto_recurring: {
+          frequency: 1,
+          frequency_type: 'months',
+          transaction_amount: PRO_AMOUNT,
+          currency_id: 'BRL',
+        },
+        back_url: `${appUrl}/dashboard?checkout=success`,
+        notification_url: notificationUrl,
+        status: 'pending',
+      })
+    } catch (err) {
+      return await failCleanly(err)
+    }
     await admin.from('payments').update({ provider_reference: preapproval.id }).eq('id', payment.id)
 
     return json({ url: preapproval.init_point })

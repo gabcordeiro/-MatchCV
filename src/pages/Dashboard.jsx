@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   DndContext,
   DragOverlay,
@@ -28,7 +28,8 @@ const STALE_DAYS = 30
 
 export default function Dashboard() {
   const { user } = useAuth()
-  const { profile } = useProfile()
+  const { profile, reload: reloadProfile } = useProfile()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [applications, setApplications] = useState([])
   const [loading, setLoading] = useState(true)
@@ -37,6 +38,26 @@ export default function Dashboard() {
   const [celebrateId, setCelebrateId] = useState(null)
   const [toast, setToast] = useState(null) // { message, undo? }
   const toastTimer = useRef(null)
+  // Resultado do checkout (volta do Mercado Pago via ?checkout=...).
+  const [checkoutResult, setCheckoutResult] = useState(null)
+
+  useEffect(() => {
+    const result = searchParams.get('checkout')
+    if (!result) return
+    setCheckoutResult(result)
+    // Limpa o parâmetro da URL (evita re-mostrar o banner num refresh).
+    const next = new URLSearchParams(searchParams)
+    next.delete('checkout')
+    setSearchParams(next, { replace: true })
+    if (result === 'success') {
+      // O webhook credita de forma assíncrona — recarrega o perfil agora e de
+      // novo em alguns segundos pra pegar o crédito/plano quando ele chegar.
+      reloadProfile()
+      const t = setTimeout(() => reloadProfile(), 5000)
+      return () => clearTimeout(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   useEffect(() => {
     let active = true
@@ -114,6 +135,37 @@ export default function Dashboard() {
           <span className="sm:hidden">Nova</span>
         </Link>
       </div>
+
+      {checkoutResult === 'success' && (
+        <div className="animate-cardin mt-4 flex items-start justify-between gap-3 rounded-xl border border-olive-200 bg-olive-50 px-4 py-3 text-sm text-olive-800">
+          <span>
+            🎉 <strong>Pagamento aprovado!</strong> Seus créditos/plano são liberados em instantes
+            — se ainda não apareceu aí em cima, dá uma atualizada na página.
+          </span>
+          <button
+            onClick={() => setCheckoutResult(null)}
+            className="shrink-0 font-semibold text-olive-700 hover:text-olive-900"
+            aria-label="Fechar aviso"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      {checkoutResult === 'pending' && (
+        <div className="animate-cardin mt-4 flex items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span>
+            ⏳ <strong>Pagamento em processamento.</strong> Pix pode levar alguns instantes para
+            confirmar — assim que cair, seus créditos aparecem aqui e você recebe a confirmação.
+          </span>
+          <button
+            onClick={() => setCheckoutResult(null)}
+            className="shrink-0 font-semibold text-amber-700 hover:text-amber-900"
+            aria-label="Fechar aviso"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <UsageBanner profile={profile} />
 
